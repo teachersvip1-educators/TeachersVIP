@@ -33,6 +33,7 @@ Set:
 
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
+- `RESEND_TO_EMAIL` — optional destination for new-user registration notifications.
 - `APP_URL`
 - `SUPERADMIN_EMAILS` — optional comma-separated personal account emails allowed to use the superadmin dashboard.
 - `SUPERADMIN_REGISTRATION_PIN` — one-time setup PIN for `/admin-register`; set this in Railway and rotate it after setup.

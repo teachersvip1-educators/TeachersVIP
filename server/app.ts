@@ -48,6 +48,10 @@ function passwordResetEmailHtml(resetUrl: string) {
   return `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#0f172a;padding:28px"><h1>Reset your TeachersVIP password</h1><p>Use the secure link below to choose a new password. This link expires in 30 minutes.</p><p><a href="${resetUrl}">Reset password</a></p><p>If you did not request this, you can safely ignore this email.</p></body></html>`
 }
 
+function newUserEmailHtml(user: { firstName: string; lastName: string; email: string; city: string }) {
+  return `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#0f172a;padding:28px"><h1>New TeachersVIP member</h1><p>A new educator account has been registered.</p><p><strong>Name:</strong> ${user.firstName} ${user.lastName}<br><strong>Email:</strong> ${user.email}<br><strong>City:</strong> ${user.city}</p></body></html>`
+}
+
 export function buildApp({ config, db }: { config: Config; db: DbPool }) {
   const app = Fastify({ bodyLimit: 4 * 1024 * 1024, logger: { redact: ['req.headers.cookie', 'req.body.password', 'req.body.pin', 'req.body.promoCode', 'req.body.imageUrl'] }, trustProxy: true })
   const resend = config.RESEND_API_KEY ? new Resend(config.RESEND_API_KEY) : null
@@ -132,6 +136,10 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
     } catch (error: any) {
       if (error.code === '23505') return reply.code(409).send({ error: 'An account already exists for this email.' })
       throw error
+    }
+    if (resend && config.RESEND_TO_EMAIL) {
+      const { error } = await resend.emails.send({ from: config.RESEND_FROM_EMAIL, to: config.RESEND_TO_EMAIL, subject: 'New TeachersVIP member registration', html: newUserEmailHtml({ firstName: body.firstName, lastName: body.lastName, email: body.personalEmail, city: body.city }), text: `New TeachersVIP member\n\nName: ${body.firstName} ${body.lastName}\nEmail: ${body.personalEmail}\nCity: ${body.city}` })
+      if (error) app.log.error({ resendError: error }, 'Resend rejected the new-user notification')
     }
     await createSession(reply, id)
     return reply.code(201).send({ ok: true })
