@@ -198,12 +198,19 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
     }), request.body)
     if (body.pin !== config.SUPERADMIN_REGISTRATION_PIN) return reply.code(403).send({ error: 'The registration PIN is incorrect.' })
     const client = await db.connect()
-    const userId = randomUUID()
+    let userId = randomUUID()
     try {
       await client.query('BEGIN')
       const claim = await client.query<{ available: boolean }>(`SELECT (completed_at IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE is_superadmin)) available FROM superadmin_bootstrap WHERE id=true FOR UPDATE`)
       if (!claim.rows[0]?.available) { await client.query('ROLLBACK'); return reply.code(409).send({ error: 'Superadmin registration has already been completed.' }) }
-      await client.query(`INSERT INTO users(id,personal_email,password_hash,first_name,last_name,city,educator_verified_at,is_superadmin) VALUES($1,$2,$3,$4,$5,$6,now(),true)`, [userId, body.email, await hashPassword(body.password), body.firstName, body.lastName, body.city])
+      const existing = await client.query<{ id: string; password_hash: string }>('SELECT id,password_hash FROM users WHERE personal_email=$1 FOR UPDATE', [body.email])
+      if (existing.rows[0]) {
+        if (!(await verifyPassword(body.password, existing.rows[0].password_hash))) { await client.query('ROLLBACK'); return reply.code(401).send({ error: 'That email already has an account. Enter its current password to continue.' }) }
+        userId = existing.rows[0].id
+        await client.query('UPDATE users SET first_name=$1,last_name=$2,city=$3,educator_verified_at=COALESCE(educator_verified_at,now()),is_superadmin=true,updated_at=now() WHERE id=$4', [body.firstName, body.lastName, body.city, userId])
+      } else {
+        await client.query(`INSERT INTO users(id,personal_email,password_hash,first_name,last_name,city,educator_verified_at,is_superadmin) VALUES($1,$2,$3,$4,$5,$6,now(),true)`, [userId, body.email, await hashPassword(body.password), body.firstName, body.lastName, body.city])
+      }
       await client.query('INSERT INTO member_cards(id,user_id,member_id) VALUES($1,$2,$3)', [randomUUID(), userId, `TVIP-${randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`])
       await client.query('UPDATE superadmin_bootstrap SET completed_at=now(),completed_by=$1 WHERE id=true', [userId])
       await client.query('COMMIT')
