@@ -34,13 +34,12 @@ Set:
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
 - `APP_URL`
-- `SUPERADMIN_EMAILS` — comma-separated personal account emails allowed to use the superadmin dashboard.
+- `SUPERADMIN_EMAILS` — optional comma-separated personal account emails allowed to use the superadmin dashboard.
+- `SUPERADMIN_REGISTRATION_PIN` — one-time setup PIN for `/admin-register`; set this in Railway and rotate it after setup.
 
 `RESEND_FROM_EMAIL` must use a sender/domain that is verified in Resend before production email delivery will work.
 
-Create the superadmin account through the normal account flow using an email listed in `SUPERADMIN_EMAILS`. The server, not the browser, enforces this allowlist. Never put a superadmin email list in a `VITE_` variable.
-
-For local development and test environments only, `pnpm db:seed` creates `admin@teachersvip.local` with password `TeachersVIP-Admin-2026!`. Do not use this account or password in production; production superadmin access requires an explicitly configured `SUPERADMIN_EMAILS` value.
+For first-time setup, open `/admin-register`, enter the setup PIN, and create the administrator account. The route is backed by a database claim and becomes unavailable permanently after the first successful registration. The server, not the browser, enforces superadmin access. Never put a superadmin email list or setup PIN in a `VITE_` variable.
 
 ## Pass2U automation
 

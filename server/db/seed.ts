@@ -1,7 +1,6 @@
 import { getConfig } from '../config.js'
 import { createPool } from './pool.js'
 import { encrypt } from '../security.js'
-import { ensureTestAdmin, TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD } from './test-admin.js'
 
 
 const businesses = [
@@ -43,8 +42,6 @@ export async function seed() {
       await pool.query(`INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, description=EXCLUDED.description, category=EXCLUDED.category, restrictions=EXCLUDED.restrictions, giveaway=EXCLUDED.giveaway`, row)
     }
-    await ensureTestAdmin(pool)
-    console.log(`Test superadmin ready: ${TEST_ADMIN_EMAIL}`)
   } finally { await pool.end() }
 }
 

@@ -1,11 +1,9 @@
 import { getConfig } from './config.js'
 import { createPool } from './db/pool.js'
 import { buildApp } from './app.js'
-import { ensureTestAdmin } from './db/test-admin.js'
 
 const config = getConfig()
 const db = createPool(config)
-await ensureTestAdmin(db)
 const app = buildApp({ config, db })
 
 const shutdown = async () => { await app.close(); await db.end(); process.exit(0) }

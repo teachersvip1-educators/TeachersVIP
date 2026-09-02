@@ -17,7 +17,7 @@ import { createPass2UClient } from './integrations/pass2u.js'
 const SESSION_COOKIE = 'teachersvip_session'
 const allowedAnalytics = new Set(['business_listing_view', 'deal_view', 'website_click', 'directions_click', 'promo_code_reveal', 'reported_deal_use', 'estimated_savings'])
 
-type UserRow = { id: string; personal_email: string; first_name: string; last_name: string; mobile: string | null; city: string; sms_consent: boolean; work_email: string | null; educator_verified_at: string | null }
+type UserRow = { id: string; personal_email: string; first_name: string; last_name: string; mobile: string | null; city: string; sms_consent: boolean; work_email: string | null; educator_verified_at: string | null; is_superadmin: boolean }
 
 declare module 'fastify' {
   interface FastifyRequest { currentUser: UserRow | null }
@@ -49,7 +49,7 @@ function passwordResetEmailHtml(resetUrl: string) {
 }
 
 export function buildApp({ config, db }: { config: Config; db: DbPool }) {
-  const app = Fastify({ bodyLimit: 4 * 1024 * 1024, logger: { redact: ['req.headers.cookie', 'req.body.password', 'req.body.promoCode', 'req.body.imageUrl'] }, trustProxy: true })
+  const app = Fastify({ bodyLimit: 4 * 1024 * 1024, logger: { redact: ['req.headers.cookie', 'req.body.password', 'req.body.pin', 'req.body.promoCode', 'req.body.imageUrl'] }, trustProxy: true })
   const resend = config.RESEND_API_KEY ? new Resend(config.RESEND_API_KEY) : null
   const pass2u = createPass2UClient(config)
 
@@ -75,7 +75,7 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
   app.addHook('preHandler', async request => {
     const raw = request.cookies[SESSION_COOKIE]
     if (!raw) return
-    const result = await db.query<UserRow>(`SELECT u.id,u.personal_email,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.work_email,u.educator_verified_at
+    const result = await db.query<UserRow>(`SELECT u.id,u.personal_email,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.work_email,u.educator_verified_at,u.is_superadmin
       FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now()`, [tokenHash(raw)])
     request.currentUser = result.rows[0] ?? null
   })
@@ -89,7 +89,8 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
     if (!user.educator_verified_at) throw Object.assign(new Error('Educator verification required'), { statusCode: 403 })
     return user
   }
-  const isSuperadmin = (user: UserRow | null) => Boolean(user && (user.personal_email.toLowerCase() === 'admin@teachersvip.local' || config.SUPERADMIN_EMAILS.split(',').map(email => email.trim().toLowerCase()).filter(Boolean).includes(user.personal_email.toLowerCase())))
+  const configuredSuperadmins = config.SUPERADMIN_EMAILS.split(',').map(email => email.trim().toLowerCase()).filter(Boolean)
+  const isSuperadmin = (user: UserRow | null) => Boolean(user && (user.is_superadmin || configuredSuperadmins.includes(user.personal_email.toLowerCase())))
   const requireSuperadmin = (request: FastifyRequest) => {
     const user = requireUser(request)
     if (!isSuperadmin(user)) throw Object.assign(new Error('Superadmin access required.'), { statusCode: 403 })
@@ -184,6 +185,36 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
   })
 
   app.get('/api/auth/session', async request => ({ user: request.currentUser ? { ...request.currentUser, verified: Boolean(request.currentUser.educator_verified_at), is_superadmin: isSuperadmin(request.currentUser) } : null }))
+
+  app.get('/api/auth/admin-registration-status', async () => {
+    const result = await db.query<{ available: boolean }>(`SELECT (completed_at IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE is_superadmin)) available FROM superadmin_bootstrap WHERE id=true`)
+    return { available: Boolean(result.rows[0]?.available) }
+  })
+
+  app.post('/api/auth/admin-register', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const body = parse(z.object({
+      pin: z.string().regex(/^\d{4,12}$/), firstName: z.string().trim().min(2).max(80), lastName: z.string().trim().min(2).max(80),
+      email: z.email().transform(value => value.toLowerCase()), password: z.string().min(12).max(128), city: z.string().trim().min(2).max(100),
+    }), request.body)
+    if (body.pin !== config.SUPERADMIN_REGISTRATION_PIN) return reply.code(403).send({ error: 'The registration PIN is incorrect.' })
+    const client = await db.connect()
+    const userId = randomUUID()
+    try {
+      await client.query('BEGIN')
+      const claim = await client.query<{ available: boolean }>(`SELECT (completed_at IS NULL AND NOT EXISTS (SELECT 1 FROM users WHERE is_superadmin)) available FROM superadmin_bootstrap WHERE id=true FOR UPDATE`)
+      if (!claim.rows[0]?.available) { await client.query('ROLLBACK'); return reply.code(409).send({ error: 'Superadmin registration has already been completed.' }) }
+      await client.query(`INSERT INTO users(id,personal_email,password_hash,first_name,last_name,city,educator_verified_at,is_superadmin) VALUES($1,$2,$3,$4,$5,$6,now(),true)`, [userId, body.email, await hashPassword(body.password), body.firstName, body.lastName, body.city])
+      await client.query('INSERT INTO member_cards(id,user_id,member_id) VALUES($1,$2,$3)', [randomUUID(), userId, `TVIP-${randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`])
+      await client.query('UPDATE superadmin_bootstrap SET completed_at=now(),completed_by=$1 WHERE id=true', [userId])
+      await client.query('COMMIT')
+    } catch (error: any) {
+      await client.query('ROLLBACK')
+      if (error.code === '23505') return reply.code(409).send({ error: 'An account already exists for this email.' })
+      throw error
+    } finally { client.release() }
+    await createSession(reply, userId)
+    return reply.code(201).send({ ok: true })
+  })
 
   app.get('/api/admin/overview', async request => {
     const admin = requireSuperadmin(request)
