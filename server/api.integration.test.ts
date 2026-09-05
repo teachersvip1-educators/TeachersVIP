@@ -26,11 +26,11 @@ suite('V1 API integration', () => {
   })
 
   it('completes registration, unrestricted email verification, protected promo reveal, and reporting', async () => {
-    const registration = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { firstName: 'Test', lastName: 'Teacher', personalEmail: email, city: 'Houston, Texas', password: 'TeachersVIP-Test-2026', smsConsent: true } })
+    const registration = await app.inject({ method: 'POST', url: '/api/auth/register', payload: { firstName: 'Test', lastName: 'Teacher', schoolEmail: email, city: 'Houston, Texas', password: 'TeachersVIP-Test-2026', smsConsent: true } })
     expect(registration.statusCode).toBe(201)
     cookie = String(registration.headers['set-cookie']).split(';')[0]
 
-    const verification = await app.inject({ method: 'POST', url: '/api/verification/send', headers: { cookie }, payload: { workEmail: `work-${email}` } })
+    const verification = await app.inject({ method: 'POST', url: '/api/verification/send', headers: { cookie }, payload: {} })
     expect(verification.statusCode).toBe(200)
     const token = new URL(verification.json().verificationUrl).searchParams.get('token')
     expect(token).toBeTruthy()

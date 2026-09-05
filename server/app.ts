@@ -28,7 +28,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   if (!result.success) {
     const issue = result.error.issues[0]
     const field = String(issue?.path[0] ?? '')
-    const labels: Record<string, string> = { firstName: 'First name', lastName: 'Last name', personalEmail: 'Personal email', workEmail: 'School/work email', mobile: 'Mobile number', city: 'City', password: 'Password', businessName: 'Business name', businessEmail: 'Business email', proposedDeal: 'Proposed deal', email: 'Email' }
+    const labels: Record<string, string> = { firstName: 'First name', lastName: 'Last name', personalEmail: 'School email', schoolEmail: 'School email', workEmail: 'School email', mobile: 'Mobile number', city: 'City', password: 'Password', businessName: 'Business name', businessEmail: 'Business email', proposedDeal: 'Proposed deal', email: 'Email' }
     const label = labels[field] ?? 'This field'
     let message = `${label} is invalid.`
     if (issue?.code === 'too_small') message = `${label} must contain at least ${issue.minimum} characters.`
@@ -115,6 +115,20 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
     }
     return configured
   }
+  const sendEducatorVerification = async (request: FastifyRequest, userId: string, schoolEmail: string) => {
+    const token = randomToken()
+    await db.query('INSERT INTO educator_verifications(id,user_id,work_email,token_hash,expires_at) VALUES($1,$2,$3,$4,now()+interval \'30 minutes\')', [randomUUID(), userId, schoolEmail, tokenHash(token)])
+    const verificationUrl = `${publicOrigin(request)}/verify?token=${encodeURIComponent(token)}`
+    if (resend) {
+      const emailLogo = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/teachersvip-logo.png'))
+      const { error } = await resend.emails.send({ from: config.RESEND_FROM_EMAIL, to: schoolEmail, subject: 'Verify your TeachersVIP school email', html: verificationEmailHtml(verificationUrl), text: `Verify your school email\n\nConfirm your email to continue to your personalized TeachersVIP card and educator-only offers. This secure link expires in 30 minutes:\n\n${verificationUrl}\n\nIf you did not request this email, you can safely ignore it.\n\nFree for educators. Always.`, attachments: [{ filename: 'teachersvip-logo.png', content: emailLogo, contentType: 'image/png', contentId: 'teachersvip-logo' }] })
+      if (error) {
+        app.log.error({ resendError: error }, 'Resend rejected the verification email')
+        throw Object.assign(new Error('The verification email could not be sent. Please try again shortly.'), { statusCode: 502 })
+      }
+    } else app.log.warn({ verificationUrl }, 'Resend is not configured; returning a temporary verification URL for testing')
+    return verificationUrl
+  }
 
   app.get('/health/live', async () => ({ status: 'ok' }))
   app.get('/health/ready', async (_request, reply) => {
@@ -125,24 +139,25 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
   app.post('/api/auth/register', { config: { rateLimit: { max: 8, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const body = parse(z.object({
       firstName: z.string().trim().min(2).max(80), lastName: z.string().trim().min(2).max(80),
-      personalEmail: z.email().transform(v => v.toLowerCase()), mobile: z.string().trim().max(30).optional(),
+      schoolEmail: z.email().transform(v => v.toLowerCase()), mobile: z.string().trim().max(30).optional(),
       city: z.string().trim().min(2).max(100), password: z.string().min(10).max(128), smsConsent: z.boolean().default(false),
     }), request.body)
     const id = randomUUID()
     try {
       await db.query(`INSERT INTO users(id,personal_email,password_hash,first_name,last_name,mobile,city,sms_consent,sms_consent_version,sms_consented_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [id, body.personalEmail, await hashPassword(body.password), body.firstName, body.lastName, body.mobile || null, body.city, body.smsConsent, body.smsConsent ? 'v1-2026-08' : null, body.smsConsent ? new Date() : null])
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [id, body.schoolEmail, await hashPassword(body.password), body.firstName, body.lastName, body.mobile || null, body.city, body.smsConsent, body.smsConsent ? 'v1-2026-08' : null, body.smsConsent ? new Date() : null])
       await db.query('INSERT INTO member_cards(id,user_id,member_id) VALUES($1,$2,$3)', [randomUUID(), id, `TVIP-${randomUUID().replaceAll('-', '').slice(0, 10).toUpperCase()}`])
     } catch (error: any) {
-      if (error.code === '23505') return reply.code(409).send({ error: 'An account already exists for this email.' })
+      if (error.code === '23505') return reply.code(409).send({ error: 'An account already exists for this school email.' })
       throw error
     }
+    const verificationUrl = await sendEducatorVerification(request, id, body.schoolEmail)
     if (resend && config.RESEND_TO_EMAIL) {
-      const { error } = await resend.emails.send({ from: config.RESEND_FROM_EMAIL, to: config.RESEND_TO_EMAIL, subject: 'New TeachersVIP member registration', html: newUserEmailHtml({ firstName: body.firstName, lastName: body.lastName, email: body.personalEmail, city: body.city }), text: `New TeachersVIP member\n\nName: ${body.firstName} ${body.lastName}\nEmail: ${body.personalEmail}\nCity: ${body.city}` })
+      const { error } = await resend.emails.send({ from: config.RESEND_FROM_EMAIL, to: config.RESEND_TO_EMAIL, subject: 'New TeachersVIP member registration', html: newUserEmailHtml({ firstName: body.firstName, lastName: body.lastName, email: body.schoolEmail, city: body.city }), text: `New TeachersVIP member\n\nName: ${body.firstName} ${body.lastName}\nSchool email: ${body.schoolEmail}\nCity: ${body.city}` })
       if (error) app.log.error({ resendError: error }, 'Resend rejected the new-user notification')
     }
     await createSession(reply, id)
-    return reply.code(201).send({ ok: true })
+    return reply.code(201).send({ ok: true, ...(!resend ? { verificationUrl } : {}) })
   })
 
   app.post('/api/auth/sign-in', { config: { rateLimit: { max: 10, timeWindow: '15 minutes' } } }, async (request, reply) => {
@@ -287,18 +302,7 @@ export function buildApp({ config, db }: { config: Config; db: DbPool }) {
 
   app.post('/api/verification/send', { config: { rateLimit: { max: 4, timeWindow: '15 minutes' } } }, async request => {
     const user = requireUser(request)
-    const { workEmail } = parse(z.object({ workEmail: z.email().transform(v => v.toLowerCase()) }), request.body)
-    const token = randomToken()
-    await db.query('INSERT INTO educator_verifications(id,user_id,work_email,token_hash,expires_at) VALUES($1,$2,$3,$4,now()+interval \'30 minutes\')', [randomUUID(), user.id, workEmail, tokenHash(token)])
-    const verificationUrl = `${publicOrigin(request)}/verify?token=${encodeURIComponent(token)}`
-    if (resend) {
-      const emailLogo = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/teachersvip-logo.png'))
-      const { error } = await resend.emails.send({ from: config.RESEND_FROM_EMAIL, to: workEmail, subject: 'Verify your TeachersVIP educator email', html: verificationEmailHtml(verificationUrl), text: `Verify your educator email\n\nConfirm your email to continue to your personalized TeachersVIP card and educator-only offers. This secure link expires in 30 minutes:\n\n${verificationUrl}\n\nIf you did not request this email, you can safely ignore it.\n\nFree for educators. Always.`, attachments: [{ filename: 'teachersvip-logo.png', content: emailLogo, contentType: 'image/png', contentId: 'teachersvip-logo' }] })
-      if (error) {
-        app.log.error({ resendError: error }, 'Resend rejected the verification email')
-        throw Object.assign(new Error('The verification email could not be sent. Please try again shortly.'), { statusCode: 502 })
-      }
-    } else app.log.warn({ verificationUrl }, 'Resend is not configured; returning a temporary verification URL for testing')
+    const verificationUrl = await sendEducatorVerification(request, user.id, user.personal_email)
     return { ok: true, ...(!resend ? { verificationUrl } : {}) }
   })
 

@@ -62,7 +62,7 @@ describe('production request origin protection', () => {
       method: 'POST',
       url: '/api/auth/register',
       headers: { origin: 'https://canonical.example.com' },
-      payload: { firstName: 'A', lastName: 'Teacher', personalEmail: 'teacher@example.com', city: 'Houston, Texas', password: 'long-enough-password' },
+      payload: { firstName: 'A', lastName: 'Teacher', schoolEmail: 'teacher@example.com', city: 'Houston, Texas', password: 'long-enough-password' },
     })
     expect(response.statusCode).toBe(400)
     expect(response.json()).toEqual({ error: 'First name must contain at least 2 characters.' })

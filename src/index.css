@@ -89,6 +89,7 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .city-autocomplete { position: relative; }
 .city-suggestions { position: absolute; z-index: 8; top: calc(100% - 1px); left: 0; right: 0; display: grid; gap: 2px; padding: 7px; border: 1px solid #d4af3766; border-radius: 13px; background: #10233e; box-shadow: 0 15px 35px #0007; }
 .city-suggestions button { padding: 11px 12px; border: 0; border-radius: 8px; color: #fff; background: transparent; text-align: left; cursor: pointer; }
+.city-searching { padding: 11px 12px; color: #b9c4d4; font-size: .88rem; }
 .city-suggestions button:hover, .city-suggestions button:focus { color: #06101e; background: #f5d061; outline: none; }
 
 .newsletter { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; margin-top: 34px; padding: 20px 22px; border: 1px solid #d4af3745; border-radius: 18px; background: linear-gradient(120deg,#fff9e7,#fff); }
