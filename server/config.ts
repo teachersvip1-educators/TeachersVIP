@@ -18,6 +18,10 @@ const schema = z.object({
   PASS2U_MEMBER_ID_FIELD: z.string().default('memberid'),
   PASS2U_STATUS_FIELD: z.string().default('status'),
   MAPBOX_ACCESS_TOKEN: z.string().min(8).optional(),
+  VERIFICATION_TEST_MODE: z.preprocess(
+    (value) => typeof value === 'string' ? value.toLowerCase() === 'true' : value,
+    z.boolean().default(false),
+  ),
   ACTIVATION_LOCATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
 })
 

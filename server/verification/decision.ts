@@ -9,7 +9,39 @@ export const VERIFICATION_REASON_CODES = {
   DOMAIN_NOT_REVIEWED: 'DOMAIN_NOT_REVIEWED',
   DOMAIN_BLOCKED: 'DOMAIN_BLOCKED',
   ROLE_MISMATCH: 'ROLE_MISMATCH',
+  TEST_MODE: 'TEST_MODE',
 } as const
+
+/**
+ * Controlled pilot path: still requires a valid email-link confirmation, but
+ * deliberately skips reviewed-domain evidence so invited testers can use any
+ * email provider. Keep this behind VERIFICATION_TEST_MODE and disable it
+ * before public launch.
+ */
+export function decideVerificationForTestMode(
+  email: string,
+  resolver?: PublicSuffixResolver,
+): VerificationDecision {
+  const parsed = normalizeEmail(email, resolver)
+  if (!parsed) {
+    return {
+      status: 'manual_review',
+      automatic: false,
+      reasonCodes: [VERIFICATION_REASON_CODES.INVALID_WORK_EMAIL],
+      normalizedEmail: email.trim().toLowerCase(),
+      normalizedDomain: '',
+      registrableDomain: '',
+    }
+  }
+  return {
+    status: 'verified',
+    automatic: false,
+    reasonCodes: [VERIFICATION_REASON_CODES.TEST_MODE],
+    normalizedEmail: parsed.email,
+    normalizedDomain: parsed.hostname,
+    registrableDomain: parsed.registrableDomain,
+  }
+}
 
 /**
  * Automatic approval is intentionally narrow: only a reviewed staff-only

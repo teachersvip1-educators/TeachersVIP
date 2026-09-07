@@ -9,6 +9,31 @@ type MapboxResponse = { features?: MapboxFeature[] }
 
 export type CitySuggestion = { id: string, label: string }
 
+const LOCAL_CITIES: CitySuggestion[] = [
+  ["Houston, Texas, United States", "houston-tx"],
+  ["Dallas, Texas, United States", "dallas-tx"],
+  ["Austin, Texas, United States", "austin-tx"],
+  ["San Antonio, Texas, United States", "san-antonio-tx"],
+  ["New York, New York, United States", "new-york-ny"],
+  ["Chicago, Illinois, United States", "chicago-il"],
+  ["Los Angeles, California, United States", "los-angeles-ca"],
+  ["Atlanta, Georgia, United States", "atlanta-ga"],
+  ["Denver, Colorado, United States", "denver-co"],
+  ["Phoenix, Arizona, United States", "phoenix-az"],
+  ["Seattle, Washington, United States", "seattle-wa"],
+  ["Boston, Massachusetts, United States", "boston-ma"],
+  ["Miami, Florida, United States", "miami-fl"],
+  ["Charlotte, North Carolina, United States", "charlotte-nc"],
+  ["Washington, District of Columbia, United States", "washington-dc"],
+].map(([label, id]) => ({ label, id }))
+
+function localCitySuggestions(query: string): CitySuggestion[] {
+  const normalized = query.toLocaleLowerCase("en-US")
+  return LOCAL_CITIES.filter((city) =>
+    city.label.toLocaleLowerCase("en-US").includes(normalized),
+  ).slice(0, 10)
+}
+
 export function createCitySearch(
   config: Config,
   fetcher: typeof fetch = fetch,
@@ -22,7 +47,9 @@ export function createCitySearch(
     rawQuery: string,
   ): Promise<CitySuggestion[]> {
     const query = rawQuery.trim().replace(/\s+/g, " ")
-    if (!query || !config.MAPBOX_ACCESS_TOKEN) return []
+    if (!query) return []
+    const fallback = localCitySuggestions(query)
+    if (!config.MAPBOX_ACCESS_TOKEN) return fallback
 
     const key = query.toLocaleLowerCase("en-US")
     const cached = cache.get(key)
@@ -36,18 +63,13 @@ export function createCitySearch(
     url.searchParams.set("language", "en")
     url.searchParams.set("access_token", config.MAPBOX_ACCESS_TOKEN)
 
-    const response = await fetcher(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!response.ok)
-      throw Object.assign(
-        new Error(
-          "City suggestions are temporarily unavailable. You can still enter your city manually.",
-        ),
-        { statusCode: 502 },
-      )
-    const payload = (await response.json()) as MapboxResponse
+    try {
+      const response = await fetcher(url, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!response.ok) return fallback
+      const payload = (await response.json()) as MapboxResponse
     const seen = new Set<string>()
     const values = (payload.features ?? []).flatMap((feature, index) => {
       const properties = feature.properties ?? {}
@@ -60,8 +82,12 @@ export function createCitySearch(
       seen.add(normalized)
       return [{ id: feature.id || `${key}-${index}`, label }]
     })
-    cache.set(key, { expiresAt: Date.now() + 24 * 60 * 60 * 1000, values })
+    const resolved = values.length ? values : fallback
+    cache.set(key, { expiresAt: Date.now() + 24 * 60 * 60 * 1000, values: resolved })
     if (cache.size > 1000) cache.delete(cache.keys().next().value!)
-    return values
+    return resolved
+    } catch {
+      return fallback
+    }
   }
 }

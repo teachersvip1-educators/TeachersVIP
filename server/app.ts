@@ -23,6 +23,7 @@ import { createPass2UClient } from "./integrations/pass2u.js"
 import { createCitySearch } from "./city-search.js"
 import {
   decideVerification,
+  decideVerificationForTestMode,
   domainLookupCandidates,
   normalizeEmail,
   type DomainEvidence,
@@ -1876,11 +1877,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         client,
         record.work_email,
       )
-      const decision = decideVerification(
-        record.work_email,
-        record.selected_role,
-        evidence,
-      )
+      const decision = config.VERIFICATION_TEST_MODE
+        ? decideVerificationForTestMode(record.work_email)
+        : decideVerification(record.work_email, record.selected_role, evidence)
       verificationStatus = decision.status
       verifiedCaseId = record.id
       await client.query(
@@ -1908,6 +1907,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           JSON.stringify({
             automatic: decision.automatic,
             domain: decision.normalizedDomain,
+            testMode: config.VERIFICATION_TEST_MODE,
           }),
         ],
       )

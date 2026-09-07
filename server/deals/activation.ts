@@ -95,7 +95,7 @@ function denialReason(decision: string): ActivationDenied["reason"] {
 function denialMessage(reason: ActivationDenied["reason"]): string {
   const messages: Record<ActivationDenied["reason"], string> = {
     location_permission_required:
-      "Allow location access to verify that you are at this business.",
+      "Allow location access to use this deal.",
     invalid_location:
       "We could not use that location reading. Please try again.",
     stale_location:
@@ -103,7 +103,7 @@ function denialMessage(reason: ActivationDenied["reason"]): string {
     low_accuracy:
       "Your location is not accurate enough yet. Move outside or turn on precise location, then try again.",
     outside_radius:
-      "You are outside the approved offer location. The deal will not unlock here.",
+      "You must be at this location to use the deal.",
     limit_reached:
       "You have reached this offer’s usage limit for the current period.",
     deal_unavailable: "This deal is not available right now.",

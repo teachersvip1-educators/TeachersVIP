@@ -24,4 +24,12 @@ describe('city search', () => {
     const search = createCitySearch({ ...base, MAPBOX_ACCESS_TOKEN: undefined })
     expect(await search('Anywhere')).toEqual([])
   })
+
+  it('offers a local city fallback when the provider is not configured', async () => {
+    const search = createCitySearch({ ...base, MAPBOX_ACCESS_TOKEN: undefined })
+    expect(await search('Hou')).toContainEqual({
+      id: 'houston-tx',
+      label: 'Houston, Texas, United States',
+    })
+  })
 })

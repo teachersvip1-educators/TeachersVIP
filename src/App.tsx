@@ -184,8 +184,8 @@ function PublicHome() {
       <section className="public-hero">
         <div className="public-hero-copy">
           <span className="public-eyebrow">Free educator membership</span>
-          <h1>Local perks.<br />Just for educators.</h1>
-          <p>Verified teachers and college professors unlock meaningful offers from businesses that value their work.</p>
+          <h1>Local &amp; online perks.<br />Just for educators.</h1>
+          <p>Verified educators unlock exclusive deals, giveaways and special offers from businesses that value their work.</p>
           <div className="public-hero-actions">
             <Link className="public-primary" to="/create-account">Join Free <ArrowRight size={18} weight="bold" /></Link>
             <Link className="public-secondary" to="/sign-in">Sign In</Link>
@@ -200,8 +200,8 @@ function PublicHome() {
       </section>
       <section className="public-proof" aria-label="How TeachersVIP works">
         <div><ShieldCheck size={30} weight="duotone" /><strong>Verify once</strong><span>Use your official educator work email.</span></div>
-        <div><Tag size={30} weight="duotone" /><strong>Find real offers</strong><span>See the exact benefit before you visit.</span></div>
-        <div><MapPin size={30} weight="duotone" /><strong>Use deals simply</strong><span>Activate on-site or reveal online codes.</span></div>
+        <div><Tag size={30} weight="duotone" /><strong>Explore exclusive offers</strong><span>See the exact benefit before you visit.</span></div>
+        <div><MapPin size={30} weight="duotone" /><strong>Use deals simply</strong><span>Activate in-person deals on-site or reveal online promo codes.</span></div>
       </section>
     </main>
   )
@@ -1592,18 +1592,14 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
     }
     if (!navigator.geolocation) {
       setBusy(false)
-      setError(
-        "Location services are unavailable in this browser. Please try again on a device with location enabled.",
-      )
+      setError("Allow location access to use this deal.")
       return
     }
     navigator.geolocation.getCurrentPosition(
       (position) => void finish(position.coords, position.timestamp),
       () => {
         setBusy(false)
-        setError(
-          "Location permission is needed to verify that you are at this business. Enable location and try again.",
-        )
+        setError("Allow location access to use this deal.")
       },
       { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 },
     )
@@ -1748,18 +1744,20 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
             </section>
           ) : (
             <div className="flow-actions">
-              <Button
-                disabled={!user.verified || busy}
-                onClick={() => void activate()}
-              >
-                {busy
-                  ? deal.channel === "online"
-                    ? "Preparing offer…"
-                    : "Checking your location…"
-                  : deal.channel === "online"
-                    ? "Reveal Code"
-                    : "Use Deal"}
-              </Button>
+              <div className="deal-sticky-action">
+                <Button
+                  disabled={!user.verified || busy}
+                  onClick={() => void activate()}
+                >
+                  {busy
+                    ? deal.channel === "online"
+                      ? "Preparing offer…"
+                      : "Checking your location…"
+                    : deal.channel === "online"
+                      ? "Reveal Code"
+                      : "Use Deal"}
+                </Button>
+              </div>
               {deal.channel === "in_person" && (
                 <a
                   className="action action-soft"
