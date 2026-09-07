@@ -17,6 +17,8 @@ const schema = z.object({
   PASS2U_MEMBER_NAME_FIELD: z.string().default('name'),
   PASS2U_MEMBER_ID_FIELD: z.string().default('memberid'),
   PASS2U_STATUS_FIELD: z.string().default('status'),
+  MAPBOX_ACCESS_TOKEN: z.string().min(8).optional(),
+  ACTIVATION_LOCATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
 })
 
 export type Config = z.infer<typeof schema>

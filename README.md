@@ -1,80 +1,104 @@
-# TeachersVIP V1
+# TeachersVIP
 
-TeachersVIP is a responsive web application for verified educators to discover offers, display a personalized VIP card, reveal protected online promo codes, and self-report deal use and estimated savings.
+TeachersVIP is a responsive educator-benefits application. The initial release verifies eligible educators, issues a Pass2U card after approval, and records location-verified offer activations without representing them as completed purchases.
 
-## Current V1 boundaries
+## Official product rules
 
-- Any syntactically valid school/work email domain is accepted during the testing period.
-- Verification emails are sent through Resend when `RESEND_API_KEY` is configured.
-- In development without Resend, the verification screen provides a local verification link.
-- The personalized web VIP card is complete and remains the primary card.
-- Pass2U automation is available when its API key and model configuration are supplied. The in-app card remains available if the provider is not configured.
-- Deal use is self-reported. It is never represented as a confirmed purchase.
-- A configured superadmin can manage businesses and publish, hide, and schedule deals from `/admin`; public Discover reads only currently active published records.
-- Password recovery is available through the account email when Resend is configured.
-- There is no business PIN, NFC redemption, geolocation check-in, POS integration, receipt upload, loyalty counter, Connected Passes feature, or public business onboarding.
+- Eligible roles are limited to K-12 educators and college professors.
+- Every applicant confirms ownership of an educator work email through a time-limited link.
+- Automatic approval is intentionally narrow: the domain must be reviewed as staff/faculty-only, have documented evidence, and allow the applicant's selected role.
+- Personal email providers, shared staff/student university domains, unknown domains, blocked domains, and role mismatches go to manual review. They are not automatically denied.
+- A member card and Pass2U issuance are created only after educator approval. Failed Pass2U issuance is retained and can be retried without creating duplicate passes.
+
+The educator-domain registry is built from downloaded releases from:
+
+- [NCES Common Core of Data (CCD)](https://nces.ed.gov/ccd/files.asp) for public districts, schools, and charters.
+- [NCES Private School Universe Survey (PSS)](https://nces.ed.gov/surveys/pss/pssdata.asp) for private schools.
+- [NCES IPEDS](https://nces.ed.gov/ipeds/use-the-data) for colleges and universities.
+- [Department of Education DAPIP](https://ope.ed.gov/dapip/) for accredited postsecondary institutions and programs.
+
+Imported domains begin in manual review. An administrator must record staff-only evidence before enabling automatic approval. This avoids treating a public website domain as proof that its email accounts are faculty-only.
+
+## Deal activation route
+
+For an in-person offer, a verified educator selects a participating location and presses **Use Deal**. The browser asks for current location, and the server checks the observation timestamp, accuracy, selected location, approved radius, and usage limit. A successful activation records the educator, business, location, offer, date, time, distance, and accuracy, then returns the configured POS instruction, coupon code, or barcode for a limited time. **Get Directions** remains secondary, and the VIP Card remains available as proof of status.
+
+Online offers use the same controlled activation and usage-limit service without requesting geolocation.
+
+The dashboard labels successful in-person records **Verified On-Site Deal Activations** and reports unique educators, repeat usage, and activity by business/location. These records establish proximity and access to an offer; they do not establish a completed purchase. Exact completed-purchase reporting requires the optional enhanced POS integration.
+
+Browser geolocation is a useful proximity control, not tamper-proof proof of presence. Exact submitted coordinates are encrypted and retained for a short audit window (30 days by default); the scheduled purge removes them while preserving the selected location, distance, accuracy, outcome, and aggregate reporting fields.
+
+## Business onboarding
+
+The application asks a business for:
+
+- every participating location and full address;
+- its POS system;
+- redemption method: POS button, coupon code, barcode, or cashier instruction;
+- the protected redemption value/instruction and display lifetime;
+- offer usage count and daily, monthly, or promotional-period window;
+- standard geolocation tracking or enhanced POS tracking.
+
+An administrator reviews the application, supplies reviewed latitude/longitude for every location, confirms the geofence radius, configures the business and offer records, and chooses whether to publish them.
 
 ## Local development
 
 Requirements: Node.js 24+, pnpm, and PostgreSQL 17+.
 
-1. Copy `.env.example` to `.env` and replace the development secrets.
+1. Copy `.env.example` to `.env` and replace all development secrets.
 2. Create the PostgreSQL database referenced by `DATABASE_URL`.
 3. Run `pnpm db:migrate`.
 4. Run `pnpm db:seed`.
 5. Run `pnpm dev:full`.
 6. Open `http://localhost:8443`.
 
-The Vite client runs on port 8443 and proxies API requests to the Fastify service on port 8787.
+The Vite client runs on port 8443 and proxies API requests to Fastify on port 8787.
 
-## Resend
+Configure `MAPBOX_ACCESS_TOKEN` to enable global city suggestions from the first typed character. Manual city entry remains available when the provider is unavailable.
 
-Set:
+## Importing official education data
 
-- `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL`
-- `RESEND_TO_EMAIL` — optional destination for new-user registration notifications.
-- `APP_URL`
-- `SUPERADMIN_EMAILS` — optional comma-separated personal account emails allowed to use the superadmin dashboard.
-- `SUPERADMIN_REGISTRATION_PIN` — one-time setup PIN for `/admin-register`; set this in Railway and rotate it after setup.
+Download a CSV release directly from one of the official sources, keep the raw file outside the repository, and dry-run the import first:
 
-`RESEND_FROM_EMAIL` must use a sender/domain that is verified in Resend before production email delivery will work.
+```text
+pnpm education:import --source CCD --file C:\data\ccd.csv --release 2025 --dry-run
+pnpm education:import --source CCD --file C:\data\ccd.csv --release 2025
+```
 
-For first-time setup, open `/admin-register`, enter the setup PIN, and create the administrator account. The route is backed by a database claim and becomes unavailable permanently after the first successful registration. The server, not the browser, enforces superadmin access. Never put a superadmin email list or setup PIN in a `VITE_` variable.
+Supported source values are `CCD`, `PSS`, `IPEDS`, and `DAPIP`. The importer records the official URL, release, SHA-256 checksum, row counts, normalized snapshots, and discovered institution website domains. Re-importing the same checksum is idempotent.
 
-## Pass2U automation
+After import, use the superadmin domain registry to classify each candidate domain and record its official evidence. Only a reviewed `staff_only` + `auto_eligible` decision can participate in automatic educator verification.
 
-Create a Pass2U membership-card model with three Dynamic fields and configure:
+## Email and Pass2U
+
+Verification and password-reset email use Resend when configured. In local development, temporary links are shown in the application.
+
+Pass2U requires:
 
 - `PASS2U_API_KEY`
 - `PASS2U_MODEL_ID`
-- `PASS2U_MEMBER_NAME_FIELD` (default `name`)
-- `PASS2U_MEMBER_ID_FIELD` (default `memberid`)
-- `PASS2U_STATUS_FIELD` (default `status`)
+- `PASS2U_MEMBER_NAME_FIELD`
+- `PASS2U_MEMBER_ID_FIELD`
+- `PASS2U_STATUS_FIELD`
 
-The field values must match the unique Dynamic field keys configured in Pass2U's Model Designer. The verified-user endpoint `POST /api/me/wallet-pass` creates the pass once, stores the returned Pass2U `passId`, and returns its public Pass2U download URL. Repeated requests return the same pass instead of issuing duplicates.
+The Pass2U API key and encryption key are server-only and must never use a `VITE_` prefix. Device-specific Apple/Google wording should remain withheld until the generated pass is validated on real devices.
 
-The API key is server-only. Store it in Railway variables and never expose it through a `VITE_` variable or frontend response.
+## Retention and scheduled maintenance
+
+Run `pnpm locations:purge` at least daily from a Railway cron service or equivalent scheduler. `ACTIVATION_LOCATION_RETENTION_DAYS` controls the exact-coordinate audit window. Changing it does not retroactively restore already-purged coordinates.
 
 ## Railway
 
-Create one Railway project containing:
-
-- An application service connected to this repository.
-- A Railway PostgreSQL service.
-
-Reference the PostgreSQL `DATABASE_URL` from the application service and configure all values shown in `.env.example`. `railway.toml` builds the client, applies database migrations and seed upserts before deployment, starts the Fastify application, and uses `/health/ready` as the deployment health check.
-
-Use separate Railway staging and production environments and databases. Configure backups and perform a restore test before launch.
+Use separate staging and production environments and databases. Configure every required value in `.env.example`, enable PostgreSQL backups, test a restore, run the official data imports, review educator domains, and validate Pass2U on devices before launch. `railway.toml` builds the client, applies migrations and seed upserts, starts Fastify, and checks `/health/ready`.
 
 ## Commands
 
-- `pnpm dev:full` — run client and API locally.
-- `pnpm typecheck` — verify TypeScript.
+- `pnpm dev:full` — run the client and API locally.
+- `pnpm typecheck` — verify the React TypeScript build.
 - `pnpm test` — run unit tests; database integration tests run when `TEST_DATABASE_URL` is set.
 - `pnpm build` — create the production client bundle.
-- `pnpm start` — serve the production bundle and API.
 - `pnpm db:migrate` — apply versioned PostgreSQL migrations.
-- `pnpm db:seed` — idempotently seed the initial deal catalog.
-
-Device-specific Apple/Google naming should still be withheld until the generated pass is validated on real iPhone and Android devices. The current UI accurately labels the action as Pass2U wallet issuance.
+- `pnpm db:seed` — idempotently seed the initial deal catalogue.
+- `pnpm education:import -- ...` — import an official education release.
+- `pnpm locations:purge` — purge expired exact activation coordinates.
