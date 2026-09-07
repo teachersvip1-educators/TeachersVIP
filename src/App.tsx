@@ -184,7 +184,7 @@ function PublicHome() {
       <section className="public-hero">
         <div className="public-hero-copy">
           <span className="public-eyebrow">Free educator membership</span>
-          <h1>Local &amp; online perks.<br />Just for educators.</h1>
+          <h1>Local &amp; online deals for educators.</h1>
           <p>Verified educators unlock exclusive deals, giveaways and special offers from businesses that value their work.</p>
           <div className="public-hero-actions">
             <Link className="public-primary" to="/create-account">Join Free <ArrowRight size={18} weight="bold" /></Link>
@@ -192,10 +192,13 @@ function PublicHome() {
           </div>
           <Link className="public-business-link" to="/partner">Are you a business? <strong>Partner With Us</strong></Link>
         </div>
-        <div className="public-collage" aria-label="Examples of TeachersVIP partner offers">
-          <figure className="public-collage-main"><img src="/Ember&Oak.jpeg" alt="20% off at Ember and Oak" /></figure>
-          <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
-          <figure><img src="/The Teacher Edit.jpeg" alt="20% off at The Teacher Edit" /></figure>
+        <div className="public-offers">
+          <h2 className="public-offers-heading">Featured Educator Offers</h2>
+          <div className="public-collage" aria-label="Examples of TeachersVIP partner offers">
+            <figure className="public-collage-main"><img src="/Ember&Oak.jpeg" alt="20% off at Ember and Oak" /></figure>
+            <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
+            <figure><img src="/The Teacher Edit.jpeg" alt="20% off at The Teacher Edit" /></figure>
+          </div>
         </div>
       </section>
       <section className="public-proof" aria-label="How TeachersVIP works">
@@ -1667,6 +1670,15 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
               {deal.distance ? ` · ${deal.distance}` : ""}
             </p>
           )}
+          {deal.channel === "in_person" && !activation && (
+            <div className="location-requirement" role="note">
+              <MapPin size={20} weight="fill" />
+              <span>
+                <strong>On-site activation required</strong>
+                You must be at this location to use the deal.
+              </span>
+            </div>
+          )}
           <div className="restriction">
             <b>Offer details and restrictions</b>
             <span>{deal.description}</span>
@@ -1675,6 +1687,7 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
             {deal.ends_at && <span><strong>Expires:</strong> {new Date(deal.ends_at).toLocaleDateString()}</span>}
             {deal.hours && <span><strong>Hours:</strong> {deal.hours}</span>}
           </div>
+          {!activation && error && <Notice kind="error">{error}</Notice>}
           {activation ? (
             <section
               className="report-success activation-success"
@@ -1789,7 +1802,7 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
               )}
             </div>
           )}
-          {error && <Notice kind="error">{error}</Notice>}
+          {activation && error && <Notice kind="error">{error}</Notice>}
         </div>
       </section>
     </Page>
@@ -3422,7 +3435,7 @@ function ActivationProfilePage({
           <span>Deal activations</span>
         </div>
         <div>
-          <strong>{profile.verified ? "Active" : "Pending"}</strong>
+          <strong>{profile.educator_verified_at ? "Active" : "Pending"}</strong>
           <span>Educator status</span>
         </div>
       </section>

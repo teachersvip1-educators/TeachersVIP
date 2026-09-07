@@ -134,6 +134,10 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .detail-copy h2 { margin: 0; font-size: 34px; text-transform: uppercase; }
 .detail-copy > p { margin: 0; color: #64748b; line-height: 1.6; }
 .detail-copy > .business-address { padding-left: 16px; border-left: 3px solid #d4af37; color: #334155; font-size: 13px; font-weight: 600; }
+.location-requirement { display: flex; align-items: flex-start; gap: 11px; padding: 13px 15px; border: 1px solid #d4af3780; border-radius: 14px; color: #5f4a0d; background: #fffbeb; font-size: 13px; line-height: 1.45; }
+.location-requirement svg { flex: 0 0 auto; margin-top: 1px; color: #b8941f; }
+.location-requirement span { display: grid; gap: 2px; }
+.location-requirement strong { color: #06101e; font-size: 12px; letter-spacing: .02em; }
 .tags { display: flex; gap: 8px; }
 .tags span { padding: 6px 9px; border-radius: 8px; color: #755a10; background: #d4af3721; font-size: 11px; font-weight: 800; text-transform: uppercase; }
 .restriction { display: grid; gap: 5px; padding: 15px; border-radius: 14px; background: #f8fafc; }
@@ -226,7 +230,7 @@ h1, h2 { font-family: Oswald, sans-serif; }
 @media (min-width: 1300px) { .deal-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 @media (max-width: 640px) { .hero { min-height: 0; padding: 23px; }.hero-copy { max-width: 78%; }.newsletter { grid-template-columns: 1fr; gap: 13px; }.newsletter form { width: 100%; }.newsletter input { min-width: 0; flex: 1; } }
 @media (max-width: 460px) { .auth-page { padding: 0; }.auth-card { min-height: 100dvh; border: 0; border-radius: 0; padding: 25px 20px; }.two { grid-template-columns: 1fr; }.page { padding-inline: 16px; }.topbar { padding-inline: 16px; }.stats { grid-template-columns: repeat(2,1fr); }.stats strong { font-size: 19px; }.card-footer { align-items: flex-start; flex-direction: column; }.page-heading { align-items: flex-start; flex-direction: column; }.detail-copy { padding: 22px 24px 26px; }.image-card-action { inset: auto 12px 12px; }.admin-card { padding: 17px; border-radius: 18px; }.admin-intro { padding: 19px; }.admin-intro > svg { width: 30px; }.admin-row { grid-template-columns: 1fr auto; }.admin-row .admin-status { grid-column: 2; grid-row: 1; }.admin-row .action { grid-column: 2; grid-row: 2; }.admin-row > div { grid-column: 1; grid-row: 1 / span 2; }.admin-preview-panel .admin-card-heading { flex-wrap: wrap; }.admin-preview-panel .admin-card-heading .action { width: auto; } }
-@media (max-width: 899px) { .deal-detail .flow-actions { padding-bottom: 76px; }.deal-sticky-action { position: fixed; inset: auto 16px calc(72px + env(safe-area-inset-bottom) + 12px); z-index: 24; width: auto; }.deal-sticky-action .action { box-shadow: 0 14px 32px #06101e4d; } }
+@media (max-width: 899px) { .deal-detail { margin-bottom: 96px; }.deal-detail .flow-actions { padding-bottom: 132px; }.deal-sticky-action { position: fixed; inset: auto 16px calc(72px + env(safe-area-inset-bottom) + 12px); z-index: 24; width: auto; }.deal-sticky-action .action { box-shadow: 0 14px 32px #06101e4d; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition: none !important; } }
 
 /* Final agreement: stable auth footer, activation payloads, and structured partner setup. */
@@ -281,7 +285,9 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .public-hero { width: min(1180px,calc(100% - 40px)); min-height: calc(100dvh - 72px); display: grid; grid-template-columns: .92fr 1.08fr; align-items: center; gap: clamp(42px,7vw,100px); margin: 0 auto; padding: 54px 0 68px; }
 .public-hero-copy { position: relative; z-index: 2; }
 .public-eyebrow { display: block; margin-bottom: 17px; color: #f5d061; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; }
-.public-hero h1, .partner-intro h1 { margin: 0; max-width: 720px; font-size: clamp(48px,4.6vw,64px); line-height: .94; letter-spacing: -.015em; text-transform: uppercase; }
+.public-hero h1, .partner-intro h1 { margin: 0; max-width: 720px; line-height: .94; letter-spacing: -.015em; text-transform: uppercase; }
+.public-hero h1 { font-size: clamp(38px,3.68vw,51px); }
+.partner-intro h1 { font-size: clamp(48px,4.6vw,64px); }
 .public-hero-copy > p { max-width: 520px; margin: 24px 0 0; color: #bcc8d8; font-size: 17px; line-height: 1.65; }
 .public-hero-actions { display: flex; align-items: center; gap: 12px; margin-top: 30px; }
 .public-primary, .public-secondary { min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 12px 25px; border-radius: 999px; font-weight: 800; white-space: nowrap; transition: transform .16s ease, filter .16s ease; }
@@ -291,7 +297,9 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .public-primary:active, .public-secondary:active { transform: translateY(1px); }
 .public-business-link { display: inline-block; margin-top: 22px; color: #aebccd; font-size: 13px; }
 .public-business-link strong { color: #f5d061; }
-.public-collage { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; align-self: center; }
+.public-offers { display: grid; gap: 13px; align-self: center; }
+.public-offers-heading { margin: 0; color: #f5d061; font-size: 12px; font-weight: 800; letter-spacing: 1.8px; text-transform: uppercase; }
+.public-collage { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
 .public-collage figure { position: relative; overflow: hidden; aspect-ratio: 3 / 2; margin: 0; border: 1px solid #ffffff20; border-radius: 16px; background: #10233e; box-shadow: 0 22px 55px #0007; }
 .public-collage-main { grid-column: 1 / -1; }
 .public-collage img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; transition: transform .35s ease; }
@@ -321,7 +329,8 @@ h1, h2 { font-family: Oswald, sans-serif; }
   .public-header { width: min(100% - 28px,1180px); }
   .public-header nav { gap: 12px; }.public-header nav > a:first-child { display: none; }
   .public-hero { width: min(100% - 32px,1180px); min-height: auto; grid-template-columns: 1fr; gap: 36px; padding: 52px 0; }
-  .public-hero h1 { font-size: clamp(47px,13vw,72px); }
+.public-hero h1 { font-size: clamp(38px,10.4vw,58px); }
+.public-offers { width: 100%; }
   .public-collage { width: 100%; }
   .public-proof { grid-template-columns: 1fr; }.public-proof > div { border-right: 0; border-bottom: 1px solid #ffffff14; }
   .partner-intro { grid-template-columns: 1fr; gap: 38px; padding: 54px 0 65px; }
