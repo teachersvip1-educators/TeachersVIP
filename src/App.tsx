@@ -2016,7 +2016,7 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
           {locations.map((location, index) => (
             <fieldset
               className="location-fieldset"
-              key={`${index}-${location.name}`}
+              key={`location-${index}`}
             >
               <legend>{location.name || `Location ${index + 1}`}</legend>
               <div className="two">
