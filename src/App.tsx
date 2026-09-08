@@ -194,7 +194,7 @@ function PublicHome() {
         </div>
         <div className="public-offers">
           <h2 className="public-offers-heading">Featured Educator Offers</h2>
-          <div className="public-collage" aria-label="Examples of TeachersVIP partner offers">
+          <div className="public-collage" role="region" tabIndex={0} aria-label="Examples of TeachersVIP partner offers">
             <figure className="public-collage-main"><img src="/Ember&Oak.jpeg" alt="20% off at Ember and Oak" /></figure>
             <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
             <figure><img src="/The Teacher Edit.jpeg" alt="20% off at The Teacher Edit" /></figure>
@@ -202,7 +202,7 @@ function PublicHome() {
         </div>
       </section>
       <section className="public-proof" aria-label="How TeachersVIP works">
-        <div><ShieldCheck size={30} weight="duotone" /><strong>Verify once</strong><span>Use your official educator work email.</span></div>
+        <div><ShieldCheck size={30} weight="duotone" /><strong>Verify once</strong><span>Confirm the email address you want to use.</span></div>
         <div><Tag size={30} weight="duotone" /><strong>Explore exclusive offers</strong><span>See the exact benefit before you visit.</span></div>
         <div><MapPin size={30} weight="duotone" /><strong>Use deals simply</strong><span>Activate in-person deals on-site or reveal online promo codes.</span></div>
       </section>
@@ -572,7 +572,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           <Field label="Last name" name="lastName" required minLength={2} />
         </div>
         <Field
-          label="Educator work email"
+          label="Email address"
           name="workEmail"
           type="email"
           required
@@ -741,7 +741,7 @@ function SignIn({ refresh }: { refresh: RefreshSession }) {
       intro="Sign in to your TeachersVIP account."
     >
       <form className="form-grid" onSubmit={submit}>
-        <Field label="Educator work email" name="email" type="email" required />
+        <Field label="Email address" name="email" type="email" required />
         <Field label="Password" name="password" type="password" required />
         <Link className="dev-link" to="/forgot-password">
           Forgot your password?
@@ -790,7 +790,7 @@ function ForgotPassword() {
     >
       <form className="form-grid" onSubmit={submit}>
         <label className="field">
-          <span>Educator work email</span>
+          <span>Email address</span>
           <input
             name="email"
             type="email"
@@ -885,7 +885,7 @@ function Verify({
       .then(async (result) => {
         const nextUser = await refresh()
         if (result.status === "verified" && nextUser?.verified) {
-          setMessage("Your educator work email is verified.")
+          setMessage("Your email address is verified.")
           setTimeout(() => navigate("/deals"), 900)
         } else
           setMessage(
@@ -903,7 +903,7 @@ function Verify({
         {},
       )
       setMessage(
-        "A new verification link was sent to your educator work email.",
+        "A new verification link was sent to your email address.",
       )
       setDevUrl(result.verificationUrl || "")
     } catch (e) {
@@ -911,7 +911,7 @@ function Verify({
     }
   }
   return (
-    <Page title="Verify Your Educator Work Email" narrow>
+    <Page title="Verify Your Email Address" narrow>
       <div className="verify-panel">
         <div className="shield large">✓</div>
         <p>
@@ -933,8 +933,8 @@ function Verify({
             <>
               We sent a verification link to{" "}
               <strong>{user.work_email || user.personal_email}</strong>. Open it
-              to confirm ownership. Approved staff-only educator domains can be
-              verified automatically; shared or unknown domains go to manual
+              to confirm ownership. Educator-only domain checks can be activated
+              later; shared, personal, and unknown domains then go to manual
               review.
             </>
           )}
@@ -952,8 +952,8 @@ function Verify({
           </form>
         )}
         <small>
-          Your work email is used to verify your educator account. Only K-12
-          educators and college professors are eligible.
+          Your email address is used to confirm ownership. Only K-12 educators
+          and college professors are eligible for educator benefits.
         </small>
       </div>
     </Page>
@@ -1561,7 +1561,7 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
   }
   const activate = async () => {
     if (!user.verified) {
-      setError("Verify your educator work email before activating this offer.")
+      setError("Verify your email address before activating this offer.")
       return
     }
     setBusy(true)
@@ -3292,10 +3292,10 @@ function ActivationVipCardPage({ user }: { user: SessionUser }) {
       {!user.verified ? (
         <Empty
           title="Verification required"
-          text="Confirm your educator work email before your personalized card is issued."
+          text="Confirm your email address before your personalized card is issued."
           action={
             <Link className="action action-gold" to="/verify">
-              Verify Educator Email
+              Verify Email Address
             </Link>
           }
         />
@@ -3468,7 +3468,7 @@ function ActivationProfilePage({
             />
           </div>
           <Field
-            label="Educator work email"
+            label="Email address"
             name="email"
             defaultValue={profile.work_email || profile.personal_email}
             type="email"
@@ -3592,7 +3592,7 @@ function ActivationSupport() {
     {
       question: "What email can I use for verification?",
       answer:
-        "Use your educator work email. Staff-only domains may be automatically approved after email ownership is confirmed; shared, personal, and unknown domains go to manual review.",
+        "Use any valid email address. During the pilot, confirming ownership is enough; educator-only domain checks can be activated later, sending shared, personal, and unknown domains to manual review.",
     },
     {
       question: "Is the VIP Card still available?",

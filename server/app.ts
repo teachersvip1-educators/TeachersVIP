@@ -77,16 +77,16 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
     const labels: Record<string, string> = {
       firstName: "First name",
       lastName: "Last name",
-      personalEmail: "Educator work email",
-      schoolEmail: "Educator work email",
-      workEmail: "Educator work email",
+      personalEmail: "Email address",
+      schoolEmail: "Email address",
+      workEmail: "Email address",
       mobile: "Mobile number",
       city: "City",
       password: "Password",
       businessName: "Business name",
       businessEmail: "Business email",
       proposedDeal: "Proposed deal",
-      email: "Email",
+      email: "Email address",
       role: "Educator role",
       roleAttestation: "Eligibility confirmation",
     }
@@ -104,7 +104,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 
 function verificationEmailHtml(verificationUrl: string) {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#eef2f7;font-family:Arial,sans-serif;color:#0f172a"><div style="display:none;max-height:0;overflow:hidden">Verify your educator email to unlock TeachersVIP deals and your personalized VIP card.</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef2f7"><tr><td align="center" style="padding:32px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;overflow:hidden;border-radius:24px;background:#ffffff;box-shadow:0 18px 48px rgba(6,16,30,.16)"><tr><td align="center" style="padding:30px 24px 25px;background:#06101e;border-bottom:4px solid #d4af37"><img src="cid:teachersvip-logo" width="92" alt="TeachersVIP" style="display:block;width:92px;max-width:100%;height:auto;margin:0 auto 13px"><div style="font-size:25px;font-weight:800;letter-spacing:-.5px;color:#ffffff">Teachers<span style="color:#d4af37">VIP</span></div><div style="margin-top:7px;font-size:11px;font-weight:700;letter-spacing:1.6px;color:#f5d061;text-transform:uppercase">Exclusive educator perks</div></td></tr><tr><td style="padding:38px 34px 32px"><div style="font-size:12px;font-weight:800;letter-spacing:1.4px;color:#8a6d1a;text-transform:uppercase">One quick step</div><h1 style="margin:8px 0 14px;font-size:30px;line-height:1.15;color:#06101e">Verify your educator email</h1><p style="margin:0 0 24px;font-size:16px;line-height:1.65;color:#526174">Confirm this email address to continue to your personalized TeachersVIP card and educator-only offers.</p><table role="presentation" cellspacing="0" cellpadding="0" width="100%"><tr><td align="center" bgcolor="#d4af37" style="border-radius:999px"><a href="${verificationUrl}" style="display:block;padding:16px 24px;color:#06101e;font-size:16px;font-weight:800;text-decoration:none">Verify educator email</a></td></tr></table><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;border-radius:14px;background:#f8fafc"><tr><td style="padding:16px 18px;font-size:13px;line-height:1.55;color:#526174"><strong style="color:#06101e">This link expires in 30 minutes.</strong><br>Your school/work email is used for educator verification only.</td></tr></table><p style="margin:24px 0 7px;font-size:12px;line-height:1.5;color:#718096">If the button does not work, copy and paste this link into your browser:</p><p style="margin:0;word-break:break-all;font-size:11px;line-height:1.5;color:#8a6d1a"><a href="${verificationUrl}" style="color:#8a6d1a">${verificationUrl}</a></p></td></tr><tr><td align="center" style="padding:22px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#718096">If you did not request this email, you can safely ignore it.<br><strong style="color:#06101e">Free for educators. Always.</strong></td></tr></table></td></tr></table></body></html>`
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#eef2f7;font-family:Arial,sans-serif;color:#0f172a"><div style="display:none;max-height:0;overflow:hidden">Verify your email address to unlock TeachersVIP deals and your personalized VIP card.</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef2f7"><tr><td align="center" style="padding:32px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;overflow:hidden;border-radius:24px;background:#ffffff;box-shadow:0 18px 48px rgba(6,16,30,.16)"><tr><td align="center" style="padding:30px 24px 25px;background:#06101e;border-bottom:4px solid #d4af37"><img src="cid:teachersvip-logo" width="92" alt="TeachersVIP" style="display:block;width:92px;max-width:100%;height:auto;margin:0 auto 13px"><div style="font-size:25px;font-weight:800;letter-spacing:-.5px;color:#ffffff">Teachers<span style="color:#d4af37">VIP</span></div><div style="margin-top:7px;font-size:11px;font-weight:700;letter-spacing:1.6px;color:#f5d061;text-transform:uppercase">Exclusive educator perks</div></td></tr><tr><td style="padding:38px 34px 32px"><div style="font-size:12px;font-weight:800;letter-spacing:1.4px;color:#8a6d1a;text-transform:uppercase">One quick step</div><h1 style="margin:8px 0 14px;font-size:30px;line-height:1.15;color:#06101e">Verify your email address</h1><p style="margin:0 0 24px;font-size:16px;line-height:1.65;color:#526174">Confirm this email address to continue to your personalized TeachersVIP card and educator-only offers.</p><table role="presentation" cellspacing="0" cellpadding="0" width="100%"><tr><td align="center" bgcolor="#d4af37" style="border-radius:999px"><a href="${verificationUrl}" style="display:block;padding:16px 24px;color:#06101e;font-size:16px;font-weight:800;text-decoration:none">Verify email address</a></td></tr></table><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;border-radius:14px;background:#f8fafc"><tr><td style="padding:16px 18px;font-size:13px;line-height:1.55;color:#526174"><strong style="color:#06101e">This link expires in 30 minutes.</strong><br>Your email address is used for account ownership confirmation.</td></tr></table><p style="margin:24px 0 7px;font-size:12px;line-height:1.5;color:#718096">If the button does not work, copy and paste this link into your browser:</p><p style="margin:0;word-break:break-all;font-size:11px;line-height:1.5;color:#8a6d1a"><a href="${verificationUrl}" style="color:#8a6d1a">${verificationUrl}</a></p></td></tr><tr><td align="center" style="padding:22px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#718096">If you did not request this email, you can safely ignore it.<br><strong style="color:#06101e">Free for educators. Always.</strong></td></tr></table></td></tr></table></body></html>`
 }
 
 function passwordResetEmailHtml(resetUrl: string) {
@@ -510,7 +510,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       const caseId = randomUUID()
       const normalized = normalizeEmail(body.schoolEmail)
       if (!normalized)
-        throw Object.assign(new Error("Enter a valid educator work email."), {
+        throw Object.assign(new Error("Enter a valid email address."), {
           statusCode: 400,
         })
       const client = await db.connect()
@@ -547,7 +547,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           return reply
             .code(409)
             .send({
-              error: "An account already exists for this educator work email.",
+            error: "An account already exists for this email address.",
             })
         throw error
       } finally {
@@ -1877,9 +1877,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         client,
         record.work_email,
       )
-      const decision = config.VERIFICATION_TEST_MODE
-        ? decideVerificationForTestMode(record.work_email)
-        : decideVerification(record.work_email, record.selected_role, evidence)
+      const decision = config.EDUCATOR_ONLY_VERIFICATION
+        ? decideVerification(record.work_email, record.selected_role, evidence)
+        : decideVerificationForTestMode(record.work_email)
       verificationStatus = decision.status
       verifiedCaseId = record.id
       await client.query(
@@ -1907,7 +1907,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           JSON.stringify({
             automatic: decision.automatic,
             domain: decision.normalizedDomain,
-            testMode: config.VERIFICATION_TEST_MODE,
+            educatorOnlyVerification: config.EDUCATOR_ONLY_VERIFICATION,
           }),
         ],
       )

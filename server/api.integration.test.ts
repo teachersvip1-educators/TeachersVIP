@@ -15,7 +15,7 @@ suite('TeachersVIP educator verification and activation API', () => {
   const config = getConfig({
     NODE_ENV: 'development', DATABASE_URL: databaseUrl ?? 'postgresql://test:test@localhost:5432/teachersvip_test',
     APP_URL: 'http://localhost:8443', SESSION_SECRET: 'integration-test-session-secret-32-characters',
-    DATA_ENCRYPTION_KEY: '11'.repeat(32), RESEND_API_KEY: undefined,
+    DATA_ENCRYPTION_KEY: '11'.repeat(32), RESEND_API_KEY: undefined, EDUCATOR_ONLY_VERIFICATION: true,
   })
   const db = createPool(config)
   const app = buildApp({ config, db })

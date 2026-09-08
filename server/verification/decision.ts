@@ -15,8 +15,8 @@ export const VERIFICATION_REASON_CODES = {
 /**
  * Controlled pilot path: still requires a valid email-link confirmation, but
  * deliberately skips reviewed-domain evidence so invited testers can use any
- * email provider. Keep this behind VERIFICATION_TEST_MODE and disable it
- * before public launch.
+ * email provider. Keep this behind the inverse of EDUCATOR_ONLY_VERIFICATION;
+ * enable that setting before educator-only public launch.
  */
 export function decideVerificationForTestMode(
   email: string,

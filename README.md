@@ -5,10 +5,10 @@ TeachersVIP is a responsive educator-benefits application. The initial release v
 ## Official product rules
 
 - Eligible roles are limited to K-12 educators and college professors.
-- Every applicant confirms ownership of an educator work email through a time-limited link.
-- Automatic approval is intentionally narrow: the domain must be reviewed as staff/faculty-only, have documented evidence, and allow the applicant's selected role.
-- Personal email providers, shared staff/student university domains, unknown domains, blocked domains, and role mismatches go to manual review. They are not automatically denied.
-- A member card and Pass2U issuance are created only after educator approval. Failed Pass2U issuance is retained and can be retried without creating duplicate passes.
+- During the pilot, every applicant may use any valid email address and confirms ownership through a time-limited link.
+- When educator-only verification is activated, automatic approval is intentionally narrow: the domain must be reviewed as staff/faculty-only, have documented evidence, and allow the applicant's selected role.
+- When `EDUCATOR_ONLY_VERIFICATION=true` is activated, personal email providers, shared staff/student university domains, unknown domains, blocked domains, and role mismatches go to manual review. They are not automatically denied.
+- A member card and Pass2U issuance are created only after email verification in the pilot, or educator approval when educator-only verification is activated. Failed Pass2U issuance is retained and can be retried without creating duplicate passes.
 
 The educator-domain registry is built from downloaded releases from:
 
