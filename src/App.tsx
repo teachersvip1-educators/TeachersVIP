@@ -1618,6 +1618,21 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
         </Link>
       }
     >
+      {deal.channel === "in_person" && !activation && (
+        <details className="location-requirement location-requirement-top">
+          <summary>
+            <MapPin size={20} weight="fill" />
+            <span>
+              <strong>You must be at the location to use this deal</strong>
+              <small>Tap to see how location verification works</small>
+            </span>
+          </summary>
+          <p>
+            When you tap Use Deal, TeachersVIP checks that you are at the
+            selected participating location before unlocking the offer.
+          </p>
+        </details>
+      )}
       <section className="deal-detail">
         <div className="deal-detail-media">
           <img
@@ -1669,15 +1684,6 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
               {selectedLocation.address}
               {deal.distance ? ` · ${deal.distance}` : ""}
             </p>
-          )}
-          {deal.channel === "in_person" && !activation && (
-            <div className="location-requirement" role="note">
-              <MapPin size={20} weight="fill" />
-              <span>
-                <strong>On-site activation required</strong>
-                You must be at this location to use the deal.
-              </span>
-            </div>
           )}
           <div className="restriction">
             <b>Offer details and restrictions</b>

@@ -134,10 +134,17 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .detail-copy h2 { margin: 0; font-size: 34px; text-transform: uppercase; }
 .detail-copy > p { margin: 0; color: #64748b; line-height: 1.6; }
 .detail-copy > .business-address { padding-left: 16px; border-left: 3px solid #d4af37; color: #334155; font-size: 13px; font-weight: 600; }
-.location-requirement { display: flex; align-items: flex-start; gap: 11px; padding: 13px 15px; border: 1px solid #d4af3780; border-radius: 14px; color: #5f4a0d; background: #fffbeb; font-size: 13px; line-height: 1.45; }
+.location-requirement { border: 1px solid #d4af3780; border-radius: 14px; color: #5f4a0d; background: #fffbeb; font-size: 13px; line-height: 1.45; }
+.location-requirement-top { margin: -6px 0 14px; overflow: hidden; box-shadow: 0 7px 20px #755a1012; }
+.location-requirement summary { display: flex; align-items: flex-start; gap: 11px; padding: 13px 42px 13px 15px; position: relative; list-style: none; cursor: pointer; }
+.location-requirement summary::-webkit-details-marker { display: none; }
+.location-requirement summary::after { content: '+'; position: absolute; top: 50%; right: 15px; transform: translateY(-50%); color: #755a10; font-size: 21px; font-weight: 700; line-height: 1; }
+.location-requirement[open] summary::after { content: '\2212'; }
 .location-requirement svg { flex: 0 0 auto; margin-top: 1px; color: #b8941f; }
 .location-requirement span { display: grid; gap: 2px; }
-.location-requirement strong { color: #06101e; font-size: 12px; letter-spacing: .02em; }
+.location-requirement strong { color: #06101e; font-size: 13px; letter-spacing: .01em; }
+.location-requirement small { color: #755a10; font-size: 11px; font-weight: 600; }
+.location-requirement p { margin: 0; padding: 0 15px 14px 46px; color: #5f4a0d; }
 .tags { display: flex; gap: 8px; }
 .tags span { padding: 6px 9px; border-radius: 8px; color: #755a10; background: #d4af3721; font-size: 11px; font-weight: 800; text-transform: uppercase; }
 .restriction { display: grid; gap: 5px; padding: 15px; border-radius: 14px; background: #f8fafc; }
