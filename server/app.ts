@@ -461,11 +461,14 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     "/api/cities",
     { config: { rateLimit: { max: 45, timeWindow: "1 minute" } } },
     async (request) => {
-      const { q } = parse(
-        z.object({ q: z.string().trim().min(1).max(100) }),
+      const { q, kind } = parse(
+        z.object({
+          q: z.string().trim().min(1).max(100),
+          kind: z.enum(["city", "address"]).default("city"),
+        }),
         request.query,
       )
-      return { cities: await searchCities(q), manualEntryAllowed: true }
+      return { cities: await searchCities(q, kind), manualEntryAllowed: true }
     },
   )
 
@@ -2327,7 +2330,13 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
                 z.object({
                   name: z.string().trim().min(1).max(140),
                   address: z.string().trim().min(5).max(300),
-                  timezone: z.string().trim().min(3).max(80),
+                  timezone: z.preprocess(
+                    (value) =>
+                      typeof value === "string" && !value.trim()
+                        ? "UTC"
+                        : value,
+                    z.string().trim().min(3).max(80).default("UTC"),
+                  ),
                   radiusMeters: z.coerce.number().int().min(25).max(5000),
                 }),
               )

@@ -352,6 +352,9 @@ type CitySearchResult = {
   display_name?: string
   city?: string
   state?: string
+  timezone?: string
+  latitude?: number
+  longitude?: number
   country?: string
   address?: {
     city?: string
@@ -366,16 +369,34 @@ type CitySearchResult = {
 function CityAutocomplete({
   value,
   onChange,
+  onSelect,
+  kind = "city",
+  label = "City and province/state",
+  placeholder = "Start typing your city",
+  inputName = "city",
+  idPrefix = "city",
 }: {
   value: string
   onChange: (value: string) => void
+  onSelect?: (result: CitySearchResult) => void
+  kind?: "city" | "address"
+  label?: string
+  placeholder?: string
+  inputName?: string
+  idPrefix?: string
 }) {
   const [open, setOpen] = useState(false),
-    [remoteSuggestions, setRemoteSuggestions] = useState<string[]>([]),
+    [remoteSuggestions, setRemoteSuggestions] = useState<CitySearchResult[]>([]),
     [searching, setSearching] = useState(false),
     [activeIndex, setActiveIndex] = useState(-1),
     [message, setMessage] = useState("")
-  const suggestions = [...new Set(remoteSuggestions)]
+  const suggestions = remoteSuggestions.filter(
+    (suggestion, index, all) =>
+      Boolean(suggestion.label) &&
+      all.findIndex(
+        (candidate) => candidate.label === suggestion.label,
+      ) === index,
+  )
 
   useEffect(() => {
     const query = value.trim()
@@ -390,7 +411,7 @@ function CityAutocomplete({
       setSearching(true)
       try {
         const response = await fetch(
-          `${API_BASE}/cities?q=${encodeURIComponent(query)}`,
+          `${API_BASE}/cities?q=${encodeURIComponent(query)}&kind=${kind}`,
           {
             signal: controller.signal,
             headers: { Accept: "application/json" },
@@ -401,16 +422,18 @@ function CityAutocomplete({
           cities?: CitySearchResult[]
         }
         const results = payload.cities || []
-        const labels = results
+        const normalizedResults = results
           .map((result) => {
-            if (result.label) return result.label
+            if (result.label) return result
             if (result.name)
-              return (
-                result.displayName ||
-                [result.name, result.state, result.country]
-                  .filter(Boolean)
-                  .join(", ")
-              )
+              return {
+                ...result,
+                label:
+                  result.displayName ||
+                  [result.name, result.state, result.country]
+                    .filter(Boolean)
+                    .join(", "),
+              }
             const address = result.address || {}
             const city =
               address.city ||
@@ -418,21 +441,29 @@ function CityAutocomplete({
               address.village ||
               address.municipality
             if (!city)
-              return result.display_name
-                ?.split(",")
-                .slice(0, 3)
-                .join(",")
-                .trim()
-            return [city, address.state, address.country]
-              .filter(Boolean)
-              .join(", ")
+              return {
+                ...result,
+                label: result.display_name
+                  ?.split(",")
+                  .slice(0, 3)
+                  .join(",")
+                  .trim(),
+              }
+            return {
+              ...result,
+              label: [city, address.state, address.country]
+                .filter(Boolean)
+                .join(", "),
+            }
           })
-          .filter((label): label is string => Boolean(label))
-        setRemoteSuggestions(labels)
+          .filter((result): result is CitySearchResult => Boolean(result.label))
+        setRemoteSuggestions(normalizedResults)
         setMessage(
-          labels.length
+          normalizedResults.length
             ? ""
-            : "No matching cities. You can continue with your city as entered.",
+            : kind === "address"
+              ? "No matching locations. You can continue with the address as entered."
+              : "No matching cities. You can continue with your city as entered.",
         )
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
@@ -449,30 +480,32 @@ function CityAutocomplete({
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [value])
+  }, [kind, value])
 
-  const choose = (city: string) => {
-    onChange(city)
+  const choose = (result: CitySearchResult) => {
+    const selectedLabel = result.label || result.displayName || result.name || ""
+    onChange(selectedLabel)
+    onSelect?.(result)
     setOpen(false)
     setActiveIndex(-1)
   }
   return (
     <div className="city-autocomplete">
       <label className="field">
-        <span>City and province/state</span>
+        <span>{label}</span>
         <input
-          name="city"
+          name={inputName}
           value={value}
           required
           minLength={2}
-          placeholder="Start typing your city"
+          placeholder={placeholder}
           autoComplete="off"
           role="combobox"
           aria-expanded={open}
-          aria-controls="city-suggestions"
+          aria-controls={`${idPrefix}-suggestions`}
           aria-autocomplete="list"
           aria-activedescendant={
-            activeIndex >= 0 ? `city-option-${activeIndex}` : undefined
+            activeIndex >= 0 ? `${idPrefix}-option-${activeIndex}` : undefined
           }
           onFocus={() => setOpen(true)}
           onBlur={() => window.setTimeout(() => setOpen(false), 160)}
@@ -499,21 +532,21 @@ function CityAutocomplete({
         />
       </label>
       {open && (suggestions.length > 0 || searching || message) && (
-        <div id="city-suggestions" className="city-suggestions" role="listbox">
+        <div id={`${idPrefix}-suggestions`} className="city-suggestions" role="listbox">
           {searching && (
             <span className="city-searching">Searching cities…</span>
           )}
           {suggestions.map((city, index) => (
             <button
               type="button"
-              id={`city-option-${index}`}
+              id={`${idPrefix}-option-${index}`}
               role="option"
               aria-selected={index === activeIndex}
-              key={city}
+              key={city.id || city.label}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(city)}
             >
-              {city}
+              {city.label}
             </button>
           ))}
           {!searching && message && (
@@ -1860,9 +1893,23 @@ type LocationDraft = {
   timezone: string
   radiusMeters: string
 }
+
+function getDefaultLocationTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+  } catch {
+    return "UTC"
+  }
+}
+
 function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
   const [locations, setLocations] = useState<LocationDraft[]>([
-      { name: "Main location", address: "", timezone: "", radiusMeters: "150" },
+      {
+        name: "Main location",
+        address: "",
+        timezone: getDefaultLocationTimezone(),
+        radiusMeters: "150",
+      },
     ]),
     [sent, setSent] = useState(false),
     [error, setError] = useState(""),
@@ -1897,6 +1944,7 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
         trackingMode: data.get("trackingMode"),
         locations: locations.map((location) => ({
           ...location,
+          timezone: location.timezone || getDefaultLocationTimezone(),
           radiusMeters: Number(location.radiusMeters || 150),
         })),
       })
@@ -1956,7 +2004,7 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                   {
                     name: `Location ${current.length + 1}`,
                     address: "",
-                    timezone: "",
+                    timezone: getDefaultLocationTimezone(),
                     radiusMeters: "150",
                   },
                 ])
@@ -1982,28 +2030,37 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                     required
                   />
                 </label>
-                <label className="field">
-                  <span>Full street address</span>
-                  <input
-                    value={location.address}
-                    onChange={(event) =>
-                      updateLocation(index, "address", event.target.value)
-                    }
-                    required
-                  />
-                </label>
+                <CityAutocomplete
+                  value={location.address}
+                  onChange={(value) => updateLocation(index, "address", value)}
+                  onSelect={(result) =>
+                    updateLocation(
+                      index,
+                      "timezone",
+                      result.timezone || getDefaultLocationTimezone(),
+                    )
+                  }
+                  kind="address"
+                  label="Full street address"
+                  placeholder="Start typing an address or city"
+                  inputName={`location-address-${index}`}
+                  idPrefix={`location-${index}`}
+                />
               </div>
               <div className="two">
                 <label className="field">
-                  <span>Timezone</span>
+                  <span>Timezone (auto)</span>
                   <input
                     value={location.timezone}
                     onChange={(event) =>
                       updateLocation(index, "timezone", event.target.value)
                     }
-                    placeholder="America/Chicago"
+                    placeholder="Select a location to preload this"
                     required
                   />
+                  <small className="field-note">
+                    Preloaded from the selected location when available.
+                  </small>
                 </label>
                 <label className="field">
                   <span>Allowed radius (meters)</span>

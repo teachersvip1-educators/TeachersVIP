@@ -91,6 +91,9 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .city-suggestions button { padding: 11px 12px; border: 0; border-radius: 8px; color: #fff; background: transparent; text-align: left; cursor: pointer; }
 .city-searching { padding: 11px 12px; color: #b9c4d4; font-size: .88rem; }
 .city-suggestions button:hover, .city-suggestions button:focus { color: #06101e; background: #f5d061; outline: none; }
+.location-fieldset .city-suggestions { background: #fff; border-color: #d4af3799; box-shadow: 0 15px 35px #0f172a2b; }
+.location-fieldset .city-suggestions button { color: #0f172a; }
+.location-fieldset .city-suggestions button:hover, .location-fieldset .city-suggestions button:focus, .location-fieldset .city-suggestions button[aria-selected="true"] { color: #06101e; background: #f5d061; }
 
 .newsletter { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; margin-top: 34px; padding: 20px 22px; border: 1px solid #d4af3745; border-radius: 18px; background: linear-gradient(120deg,#fff9e7,#fff); }
 .newsletter span { color: #755a10; font: 800 17px Oswald, sans-serif; text-transform: uppercase; letter-spacing: .5px; }
