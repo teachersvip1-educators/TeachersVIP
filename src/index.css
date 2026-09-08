@@ -340,7 +340,8 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .public-offers { width: 100%; }
   .public-collage { width: 100%; }
   .public-proof { grid-template-columns: 1fr; }.public-proof > div { border-right: 0; border-bottom: 1px solid #ffffff14; }
-  .partner-intro { grid-template-columns: 1fr; gap: 38px; padding: 54px 0 65px; }
+  .partner-intro { grid-template-columns: 1fr; gap: 38px; padding: 54px 0 44px; }
+  .public-partner-site > .page { padding-top: 24px; }
   .public-partner-site { background: linear-gradient(180deg,#06101e 0,#0c1d32 34%,#eef2f7 34%); }
 }
 @media (max-width: 520px) {

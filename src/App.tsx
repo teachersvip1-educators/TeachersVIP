@@ -184,7 +184,7 @@ function PublicHome() {
       <section className="public-hero">
         <div className="public-hero-copy">
           <span className="public-eyebrow">Free educator membership</span>
-          <h1>Local &amp; online deals for educators.</h1>
+          <h1>Local &amp; online perks.<br />Just for educators.</h1>
           <p>Verified educators unlock exclusive deals, giveaways and special offers from businesses that value their work.</p>
           <div className="public-hero-actions">
             <Link className="public-primary" to="/create-account">Join Free <ArrowRight size={18} weight="bold" /></Link>
@@ -193,7 +193,7 @@ function PublicHome() {
           <Link className="public-business-link" to="/partner">Are you a business? <strong>Partner With Us</strong></Link>
         </div>
         <div className="public-offers">
-          <h2 className="public-offers-heading">Featured Educator Offers</h2>
+          <h2 className="public-offers-heading">Preview Sample Offers</h2>
           <div className="public-collage" role="region" tabIndex={0} aria-label="Examples of TeachersVIP partner offers">
             <figure className="public-collage-main"><img src="/Ember&Oak.jpeg" alt="20% off at Ember and Oak" /></figure>
             <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
