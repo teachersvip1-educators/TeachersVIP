@@ -193,7 +193,7 @@ function PublicHome() {
           <Link className="public-business-link" to="/partner">Are you a business? <strong>Partner With Us</strong></Link>
         </div>
         <div className="public-offers">
-          <h2 className="public-offers-heading">Preview Sample Offers</h2>
+          <h2 className="public-offers-heading">Featured Educator Offers</h2>
           <div className="public-collage" role="region" tabIndex={0} aria-label="Examples of TeachersVIP partner offers">
             <figure className="public-collage-main"><img src="/Ember&Oak.jpeg" alt="20% off at Ember and Oak" /></figure>
             <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
