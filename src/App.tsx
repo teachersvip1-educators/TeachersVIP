@@ -184,7 +184,7 @@ function PublicHome() {
       <section className="public-hero">
         <div className="public-hero-copy">
           <span className="public-eyebrow">Free educator membership</span>
-          <h1>Local and online deals for educators.</h1>
+          <h1>Local &amp; online deals for educators.</h1>
           <p>Verified educators unlock exclusive deals, giveaways and special offers from businesses that value their work.</p>
           <div className="public-hero-actions">
             <Link className="public-primary" to="/create-account">Join Free <ArrowRight size={18} weight="bold" /></Link>
