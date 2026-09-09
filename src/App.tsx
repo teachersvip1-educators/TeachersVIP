@@ -193,8 +193,8 @@ function PublicHome() {
           <Link className="public-business-link" to="/partner">Are you a business? <strong>Partner With Us</strong></Link>
         </div>
         <div className="public-offers">
-          <h2 className="public-offers-heading">Featured Educator Offers</h2>
-          <div className="public-collage" role="region" tabIndex={0} aria-label="Examples of TeachersVIP partner offers">
+          <h2 className="public-offers-heading">Preview Sample Offers</h2>
+          <div className="public-collage" role="region" tabIndex={0} aria-label="Preview sample educator offers">
             <figure className="public-collage-main"><img src="/Ember&Oak.jpeg" alt="20% off at Ember and Oak" /></figure>
             <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
             <figure><img src="/The Teacher Edit.jpeg" alt="20% off at The Teacher Edit" /></figure>
@@ -2063,7 +2063,7 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                   </small>
                 </label>
                 <label className="field">
-                  <span>Allowed radius (meters)</span>
+                  <span>Activation Distance</span>
                   <input
                     type="number"
                     min="25"
@@ -2074,6 +2074,9 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                     }
                     required
                   />
+                  <small className="field-note">
+                    How close educators must be to use the deal. Recommended: 150 meters (about 500 feet)
+                  </small>
                 </label>
               </div>
               {locations.length > 1 && (
