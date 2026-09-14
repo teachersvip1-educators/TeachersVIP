@@ -185,7 +185,7 @@ function PublicHome() {
         <div className="public-hero-copy">
           <span className="public-eyebrow">Free educator membership</span>
           <h1>Local &amp; online deals for educators.</h1>
-          <p>Verified educators unlock exclusive deals, giveaways and special offers from businesses that value their work.</p>
+          <p>Discover deals and giveaways from local and online businesses that appreciate educators.</p>
           <div className="public-hero-actions">
             <Link className="public-primary" to="/create-account">Join Free <ArrowRight size={18} weight="bold" /></Link>
             <Link className="public-secondary" to="/sign-in">Sign In</Link>
@@ -355,6 +355,7 @@ type CitySearchResult = {
   timezone?: string
   latitude?: number
   longitude?: number
+  provider?: "mapbox" | "open-meteo" | "local"
   country?: string
   address?: {
     city?: string
@@ -534,7 +535,9 @@ function CityAutocomplete({
       {open && (suggestions.length > 0 || searching || message) && (
         <div id={`${idPrefix}-suggestions`} className="city-suggestions" role="listbox">
           {searching && (
-            <span className="city-searching">Searching cities…</span>
+            <span className="city-searching">
+              Searching {kind === "address" ? "addresses" : "cities"}…
+            </span>
           )}
           {suggestions.map((city, index) => (
             <button
@@ -551,6 +554,9 @@ function CityAutocomplete({
           ))}
           {!searching && message && (
             <span className="city-searching">{message}</span>
+          )}
+          {suggestions.some((suggestion) => suggestion.provider === "mapbox") && (
+            <span className="city-provider">Suggestions by Mapbox</span>
           )}
         </div>
       )}
@@ -1889,6 +1895,7 @@ function Saved() {
 
 type LocationDraft = {
   address: string
+  mapboxId?: string
   name: string
   timezone: string
   radiusMeters: string
@@ -2032,12 +2039,31 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                 </label>
                 <CityAutocomplete
                   value={location.address}
-                  onChange={(value) => updateLocation(index, "address", value)}
+                  onChange={(value) =>
+                    setLocations((current) =>
+                      current.map((candidate, locationIndex) =>
+                        locationIndex === index
+                          ? { ...candidate, address: value, mapboxId: undefined }
+                          : candidate,
+                      ),
+                    )
+                  }
                   onSelect={(result) =>
-                    updateLocation(
-                      index,
-                      "timezone",
-                      result.timezone || getDefaultLocationTimezone(),
+                    setLocations((current) =>
+                      current.map((candidate, locationIndex) =>
+                        locationIndex === index
+                          ? {
+                              ...candidate,
+                              address: result.label || candidate.address,
+                              timezone:
+                                result.timezone || getDefaultLocationTimezone(),
+                              mapboxId:
+                                result.provider === "mapbox"
+                                  ? result.id
+                                  : undefined,
+                            }
+                          : candidate,
+                      ),
                     )
                   }
                   kind="address"
@@ -2572,6 +2598,11 @@ function BusinessApplicationReview({
                         min={-90}
                         max={90}
                         step="any"
+                        defaultValue={
+                          location.latitude == null
+                            ? undefined
+                            : String(location.latitude)
+                        }
                         required
                       />
                       <Field
@@ -2581,6 +2612,11 @@ function BusinessApplicationReview({
                         min={-180}
                         max={180}
                         step="any"
+                        defaultValue={
+                          location.longitude == null
+                            ? undefined
+                            : String(location.longitude)
+                        }
                         required
                       />
                       <Field

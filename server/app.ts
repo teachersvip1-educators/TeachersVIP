@@ -20,7 +20,7 @@ import {
   verifyPassword,
 } from "./security.js"
 import { createPass2UClient } from "./integrations/pass2u.js"
-import { createCitySearch } from "./city-search.js"
+import { createCitySearch, resolveMapboxSuggestion } from "./city-search.js"
 import {
   decideVerification,
   decideVerificationForTestMode,
@@ -2330,6 +2330,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
                 z.object({
                   name: z.string().trim().min(1).max(140),
                   address: z.string().trim().min(5).max(300),
+                  mapboxId: z.string().trim().min(1).max(200).optional(),
                   timezone: z.preprocess(
                     (value) =>
                       typeof value === "string" && !value.trim()
@@ -2356,10 +2357,18 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           }),
         request.body,
       )
-      for (const location of body.locations) {
+      const resolvedLocations = await Promise.all(
+        body.locations.map(async (location) => ({
+          location,
+          geocode: location.mapboxId
+            ? await resolveMapboxSuggestion(config, location.mapboxId)
+            : null,
+        })),
+      )
+      for (const { location, geocode } of resolvedLocations) {
         try {
           new Intl.DateTimeFormat("en-US", {
-            timeZone: location.timezone,
+            timeZone: geocode?.timezone || location.timezone,
           }).format(new Date())
         } catch {
           throw Object.assign(
@@ -2400,15 +2409,20 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             body.trackingMode,
           ],
         )
-        for (const location of body.locations)
+        for (const { location, geocode } of resolvedLocations)
           await client.query(
-            `INSERT INTO business_application_locations(id,application_id,location_name,address,timezone,geofence_radius_m) VALUES($1,$2,$3,$4,$5,$6)`,
+            `INSERT INTO business_application_locations(id,application_id,location_name,address,timezone,latitude,longitude,geocoded_at,geocode_provider,geofence_radius_m)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
             [
               randomUUID(),
               applicationId,
               location.name,
-              location.address,
-              location.timezone,
+              geocode?.label || location.address,
+              geocode?.timezone || location.timezone,
+              geocode?.latitude ?? null,
+              geocode?.longitude ?? null,
+              geocode ? new Date() : null,
+              geocode ? "mapbox" : null,
               location.radiusMeters,
             ],
           )

@@ -4,6 +4,7 @@ import type { Config } from "./config.js"
 type MapboxFeature = {
   id?: string
   properties?: {
+    mapbox_id?: string
     full_address?: string
     name?: string
     place_formatted?: string
@@ -29,6 +30,7 @@ export type CitySearchKind = "city" | "address"
 export type CitySuggestion = {
   id: string
   label: string
+  provider?: "mapbox" | "open-meteo" | "local"
   timezone?: string
   latitude?: number
   longitude?: number
@@ -55,7 +57,7 @@ const LOCAL_CITIES: CitySuggestion[] = [
   ["London, England, United Kingdom", "london-uk", "Europe/London"],
   ["Johannesburg, Gauteng, South Africa", "johannesburg-za", "Africa/Johannesburg"],
   ["Cape Town, Western Cape, South Africa", "cape-town-za", "Africa/Johannesburg"],
-].map(([label, id, timezone]) => ({ label, id, timezone }))
+].map(([label, id, timezone]) => ({ label, id, timezone, provider: "local" }))
 
 function localCitySuggestions(query: string): CitySuggestion[] {
   const normalized = query.toLocaleLowerCase("en-US")
@@ -111,6 +113,7 @@ async function searchOpenMeteo(
       return [{
         id: String(result.id || `open-meteo-${index}`),
         label,
+        provider: "open-meteo" as const,
         timezone: result.timezone,
         latitude: result.latitude,
         longitude: result.longitude,
@@ -119,6 +122,31 @@ async function searchOpenMeteo(
   } catch {
     return []
   }
+}
+
+function normalizeMapboxFeatures(
+  features: MapboxFeature[] | undefined,
+  key: string,
+): CitySuggestion[] {
+  const seen = new Set<string>()
+  return (features ?? []).flatMap((feature, index) => {
+    const properties = feature.properties ?? {}
+    const label = (
+      properties.full_address ||
+      [properties.name, properties.place_formatted].filter(Boolean).join(", ")
+    ).trim()
+    const normalized = label.toLocaleLowerCase("en-US")
+    if (!label || seen.has(normalized)) return []
+    seen.add(normalized)
+    const coordinates = coordinatesForFeature(feature)
+    return [{
+      id: feature.id || properties.mapbox_id || `${key}-${index}`,
+      label,
+      provider: "mapbox" as const,
+      ...coordinates,
+      timezone: timezoneForCoordinates(coordinates?.latitude, coordinates?.longitude),
+    }]
+  })
 }
 
 export function createCitySearch(
@@ -138,11 +166,10 @@ export function createCitySearch(
     if (!query) return []
     const fallback = localCitySuggestions(query)
 
-    const key = `${kind}:${query.toLocaleLowerCase("en-US")}`
-    const cached = cache.get(key)
-    if (cached && cached.expiresAt > Date.now()) return cached.values
-
     if (!config.MAPBOX_ACCESS_TOKEN) {
+      const key = `${kind}:${query.toLocaleLowerCase("en-US")}`
+      const cached = cache.get(key)
+      if (cached && cached.expiresAt > Date.now()) return cached.values
       const openMeteoValues = await searchOpenMeteo(query, fetcher)
       const values = openMeteoValues.length ? openMeteoValues : fallback
       cache.set(key, {
@@ -155,10 +182,13 @@ export function createCitySearch(
     const url = new URL("https://api.mapbox.com/search/geocode/v6/forward")
     url.searchParams.set(
       "types",
-      kind === "address" ? "address,place,locality" : "place,locality",
+      kind === "address"
+        ? "address,secondary_address,street,place,locality"
+        : "place,locality",
     )
     url.searchParams.set("q", query)
     url.searchParams.set("autocomplete", "true")
+    url.searchParams.set("permanent", "false")
     url.searchParams.set("limit", "10")
     url.searchParams.set("language", "en")
     url.searchParams.set("access_token", config.MAPBOX_ACCESS_TOKEN)
@@ -170,33 +200,42 @@ export function createCitySearch(
       })
       if (!response.ok) return fallback
       const payload = (await response.json()) as MapboxResponse
-      const seen = new Set<string>()
-      const values = (payload.features ?? []).flatMap((feature, index) => {
-        const properties = feature.properties ?? {}
-        const label = (
-          properties.full_address ||
-          [properties.name, properties.place_formatted].filter(Boolean).join(", ")
-        ).trim()
-        const normalized = label.toLocaleLowerCase("en-US")
-        if (!label || seen.has(normalized)) return []
-        seen.add(normalized)
-        const coordinates = coordinatesForFeature(feature)
-        return [{
-          id: feature.id || `${key}-${index}`,
-          label,
-          ...coordinates,
-          timezone: timezoneForCoordinates(coordinates?.latitude, coordinates?.longitude),
-        }]
-      })
-      const resolved = values.length ? values : fallback
-      cache.set(key, {
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-        values: resolved,
-      })
-      if (cache.size > 1000) cache.delete(cache.keys().next().value!)
-      return resolved
+      const values = normalizeMapboxFeatures(
+        payload.features,
+        `${kind}:${query.toLocaleLowerCase("en-US")}`,
+      )
+      return values.length ? values : fallback
     } catch {
       return fallback
     }
+  }
+}
+
+export async function resolveMapboxSuggestion(
+  config: Config,
+  rawMapboxId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<CitySuggestion | null> {
+  const mapboxId = rawMapboxId.trim()
+  if (!config.MAPBOX_ACCESS_TOKEN || !mapboxId) return null
+
+  const url = new URL("https://api.mapbox.com/search/geocode/v6/forward")
+  url.searchParams.set("q", mapboxId)
+  url.searchParams.set("autocomplete", "false")
+  url.searchParams.set("permanent", "true")
+  url.searchParams.set("limit", "1")
+  url.searchParams.set("language", "en")
+  url.searchParams.set("access_token", config.MAPBOX_ACCESS_TOKEN)
+
+  try {
+    const response = await fetcher(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) return null
+    const payload = (await response.json()) as MapboxResponse
+    return normalizeMapboxFeatures(payload.features, mapboxId)[0] ?? null
+  } catch {
+    return null
   }
 }
