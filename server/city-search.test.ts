@@ -5,7 +5,7 @@ import { getConfig } from './config'
 const base = getConfig({
   NODE_ENV: 'test', DATABASE_URL: 'postgresql://test:test@localhost/test',
   APP_URL: 'http://localhost:8443', SESSION_SECRET: 'test-session-secret-at-least-32-characters',
-  DATA_ENCRYPTION_KEY: '11'.repeat(32), MAPBOX_ACCESS_TOKEN: 'pk.test-token',
+  DATA_ENCRYPTION_KEY: '11'.repeat(32), MAPBOX_PUBLIC_TOKEN: 'pk.test-token',
 })
 
 describe('city search', () => {
@@ -55,7 +55,7 @@ describe('city search', () => {
 
   it('allows manual entry when no provider is configured', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ results: [] }), { status: 200 })) as unknown as typeof fetch
-    const search = createCitySearch({ ...base, MAPBOX_ACCESS_TOKEN: undefined }, fetcher)
+    const search = createCitySearch({ ...base, MAPBOX_PUBLIC_TOKEN: undefined }, fetcher)
     expect(await search('Anywhere')).toEqual([])
   })
 
@@ -66,7 +66,7 @@ describe('city search', () => {
         { id: 1, name: 'Cape Town', admin1: 'Western Cape', country: 'South Africa', timezone: 'Africa/Johannesburg', latitude: -33.9249, longitude: 18.4241 },
       ] }), { status: 200 })
     }) as unknown as typeof fetch
-    const search = createCitySearch({ ...base, MAPBOX_ACCESS_TOKEN: undefined }, fetcher)
+    const search = createCitySearch({ ...base, MAPBOX_PUBLIC_TOKEN: undefined }, fetcher)
     await expect(search('Cape Town')).resolves.toEqual([
       { id: '1', label: 'Cape Town, Western Cape, South Africa', provider: 'open-meteo', timezone: 'Africa/Johannesburg', latitude: -33.9249, longitude: 18.4241 },
     ])
@@ -74,7 +74,7 @@ describe('city search', () => {
 
   it('offers a local city fallback when the provider is not configured', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ results: [] }), { status: 200 })) as unknown as typeof fetch
-    const search = createCitySearch({ ...base, MAPBOX_ACCESS_TOKEN: undefined }, fetcher)
+    const search = createCitySearch({ ...base, MAPBOX_PUBLIC_TOKEN: undefined }, fetcher)
     expect(await search('Hou')).toContainEqual({
       id: 'houston-tx',
       label: 'Houston, Texas, United States',

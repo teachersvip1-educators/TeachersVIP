@@ -166,7 +166,7 @@ export function createCitySearch(
     if (!query) return []
     const fallback = localCitySuggestions(query)
 
-    if (!config.MAPBOX_ACCESS_TOKEN) {
+    if (!config.MAPBOX_PUBLIC_TOKEN) {
       const key = `${kind}:${query.toLocaleLowerCase("en-US")}`
       const cached = cache.get(key)
       if (cached && cached.expiresAt > Date.now()) return cached.values
@@ -191,7 +191,7 @@ export function createCitySearch(
     url.searchParams.set("permanent", "false")
     url.searchParams.set("limit", "10")
     url.searchParams.set("language", "en")
-    url.searchParams.set("access_token", config.MAPBOX_ACCESS_TOKEN)
+    url.searchParams.set("access_token", config.MAPBOX_PUBLIC_TOKEN)
 
     try {
       const response = await fetcher(url, {
@@ -217,7 +217,7 @@ export async function resolveMapboxSuggestion(
   fetcher: typeof fetch = fetch,
 ): Promise<CitySuggestion | null> {
   const mapboxId = rawMapboxId.trim()
-  if (!config.MAPBOX_ACCESS_TOKEN || !mapboxId) return null
+  if (!config.MAPBOX_PUBLIC_TOKEN || !mapboxId) return null
 
   const url = new URL("https://api.mapbox.com/search/geocode/v6/forward")
   url.searchParams.set("q", mapboxId)
@@ -225,7 +225,7 @@ export async function resolveMapboxSuggestion(
   url.searchParams.set("permanent", "true")
   url.searchParams.set("limit", "1")
   url.searchParams.set("language", "en")
-  url.searchParams.set("access_token", config.MAPBOX_ACCESS_TOKEN)
+  url.searchParams.set("access_token", config.MAPBOX_PUBLIC_TOKEN)
 
   try {
     const response = await fetcher(url, {

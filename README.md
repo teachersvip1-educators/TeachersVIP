@@ -55,7 +55,7 @@ Requirements: Node.js 24+, pnpm, and PostgreSQL 17+.
 
 The Vite client runs on port 8443 and proxies API requests to Fastify on port 8787.
 
-Configure the server-only `MAPBOX_ACCESS_TOKEN` to enable global city and street-address suggestions from the first typed character. Autocomplete requests are temporary and are not cached. When a partner selects a Mapbox address, the server resolves it with permanent geocoding before storing the normalized address, coordinates, IANA timezone, and provider provenance. When Mapbox is not configured or unavailable, city fallback suggestions and manual address entry remain available.
+Configure the server-only `MAPBOX_PUBLIC_TOKEN` to enable global city and street-address suggestions from the first typed character. Autocomplete requests are temporary and are not cached. When a partner selects a Mapbox address, the server resolves it with permanent geocoding before storing the normalized address, coordinates, IANA timezone, and provider provenance. When Mapbox is not configured or unavailable, city fallback suggestions and manual address entry remain available.
 
 ## Importing official education data
 

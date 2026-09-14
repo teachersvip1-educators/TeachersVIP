@@ -17,7 +17,7 @@ const schema = z.object({
   PASS2U_MEMBER_NAME_FIELD: z.string().default('name'),
   PASS2U_MEMBER_ID_FIELD: z.string().default('memberid'),
   PASS2U_STATUS_FIELD: z.string().default('status'),
-  MAPBOX_ACCESS_TOKEN: z.string().min(8).optional(),
+  MAPBOX_PUBLIC_TOKEN: z.string().min(8).optional(),
   // Keep broad email signup enabled during the pilot. Set this to true when
   // educator-only domain evidence should gate verification again.
   EDUCATOR_ONLY_VERIFICATION: z.preprocess(
