@@ -2007,9 +2007,16 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return { ok: true }
   })
 
+  app.patch("/api/me/email-updates", async (request) => {
+    const user = requireUser(request)
+    const body = parse(z.object({ emailUpdates: z.boolean() }), request.body)
+    await db.query("UPDATE users SET email_updates=$1,updated_at=now() WHERE id=$2", [body.emailUpdates, user.id])
+    return { ok: true }
+  })
+
   app.post("/api/me/unsubscribe", async (request) => {
     const user = requireUser(request)
-    await db.query("UPDATE users SET email_updates=false,sms_consent=false,updated_at=now() WHERE id=$1", [user.id])
+    await db.query("UPDATE users SET email_updates=false,updated_at=now() WHERE id=$1", [user.id])
     await db.query(
       `INSERT INTO newsletter_subscriptions(email,subscribed,unsubscribed_at,updated_at)
        VALUES($1,false,now(),now())

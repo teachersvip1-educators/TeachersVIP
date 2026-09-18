@@ -195,9 +195,9 @@ function PublicHome() {
         <div className="public-offers">
           <h2 className="public-offers-heading">Preview Sample Offers</h2>
           <div className="public-collage" role="region" tabIndex={0} aria-label="Preview sample educator offers">
-            <figure className="public-collage-main"><img src="/Ember&Oak.jpeg" alt="20% off at Ember and Oak" /></figure>
+            <figure className="public-collage-main"><img src="/The Teacher Edit.jpeg" alt="20% off at The Teacher Edit" /></figure>
             <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
-            <figure><img src="/The Teacher Edit.jpeg" alt="20% off at The Teacher Edit" /></figure>
+            <figure><img src="/LuxeTheory.jpeg" alt="15% off at Luxe Theory" /></figure>
           </div>
         </div>
       </section>
@@ -586,7 +586,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           mobile: data.get("mobile") || undefined,
           city,
           password: data.get("password"),
-          smsConsent: data.get("smsConsent") === "on",
+          smsConsent: false,
         },
       )
       await refresh()
@@ -641,18 +641,6 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           required
           minLength={8}
         />
-        <label className="check">
-          <input name="smsConsent" type="checkbox" />
-          <span>
-            <b>Send me TeachersVIP updates by text.</b>
-            <small>
-              By selecting this checkbox, you agree to receive recurring
-              automated promotional texts from TeachersVIP. Consent is not
-              required to join. Message and data rates may apply. Reply STOP to
-              unsubscribe.
-            </small>
-          </span>
-        </label>
         {error && <Notice kind="error">{error}</Notice>}
         <Button type="submit" disabled={busy}>
           {busy ? "Creating account…" : "Continue to Verification"}
@@ -3461,7 +3449,8 @@ function ActivationProfilePage({
     [records, setRecords] = useState<any[]>([]),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
-    [editing, setEditing] = useState(false)
+    [editing, setEditing] = useState(false),
+    [updatingEmail, setUpdatingEmail] = useState(false)
   const load = () =>
     Promise.all([
       api<{ profile: Profile }>("/me"),
@@ -3487,14 +3476,29 @@ function ActivationProfilePage({
         lastName: data.get("lastName"),
         mobile: data.get("mobile") || null,
         city: data.get("city"),
-        smsConsent: data.get("smsConsent") === "on",
-        emailUpdates: data.get("emailUpdates") === "on",
+        smsConsent: false,
+        emailUpdates: profile?.email_updates ?? false,
       })
       await load()
       setEditing(false)
       setNotice("Personal information updated.")
     } catch (e) {
       setError((e as Error).message)
+    }
+  }
+  const toggleEmailUpdates = async () => {
+    if (!profile) return
+    setUpdatingEmail(true)
+    setError("")
+    try {
+      const emailUpdates = !profile.email_updates
+      await patch("/me/email-updates", { emailUpdates })
+      setProfile({ ...profile, email_updates: emailUpdates })
+      setNotice(emailUpdates ? "Email updates are on." : "Email updates are off.")
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setUpdatingEmail(false)
     }
   }
   if (!profile)
@@ -3544,8 +3548,16 @@ function ActivationProfilePage({
       {notice && <Notice kind="success">{notice}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
       <section className="communication-status" aria-label="Communication preferences">
-        <div><span>Email updates</span><strong>{profile.email_updates ? "On" : "Off"}</strong></div>
-        <div><span>Text updates</span><strong>{profile.sms_consent ? "On" : "Off"}</strong></div>
+        <button
+          className="email-update-control"
+          type="button"
+          aria-pressed={profile.email_updates}
+          disabled={updatingEmail}
+          onClick={() => void toggleEmailUpdates()}
+        >
+          <span>Email updates</span>
+          <strong>{updatingEmail ? "Saving…" : profile.email_updates ? "On" : "Off"}</strong>
+        </button>
       </section>
       {editing ? (
         <form className="profile-form form-grid" onSubmit={save}>
@@ -3581,22 +3593,6 @@ function ActivationProfilePage({
             defaultValue={profile.city}
             required
           />
-          <label className="check">
-            <input
-              name="emailUpdates"
-              type="checkbox"
-              defaultChecked={profile.email_updates}
-            />
-            <span>Email updates {profile.email_updates ? "On" : "Off"}</span>
-          </label>
-          <label className="check">
-            <input
-              name="smsConsent"
-              type="checkbox"
-              defaultChecked={profile.sms_consent}
-            />
-            <span>Text updates {profile.sms_consent ? "On" : "Off"}</span>
-          </label>
           <Button type="submit">Save Changes</Button>
           <Button variant="soft" onClick={() => setEditing(false)}>
             Cancel
@@ -3623,7 +3619,7 @@ function ActivationProfilePage({
               try {
                 await post("/me/unsubscribe")
                 await load()
-                setNotice("You have been unsubscribed from email and text updates.")
+                setNotice("You have been unsubscribed from email updates.")
               } catch (e) {
                 setError((e as Error).message)
               }

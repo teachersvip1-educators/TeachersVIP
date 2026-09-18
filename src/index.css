@@ -334,8 +334,10 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .public-partner-site > .page { color: #0f172a; padding-top: 54px; }
 .public-partner-site > .page .page-heading h1 { color: #fff; }
 .newsletter-error { grid-column: 1 / -1; color: #991b1b; }
-.communication-status { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin: 18px 0; }
-.communication-status > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; }
+.communication-status { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 18px 0; }
+.email-update-control { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; cursor: pointer; font: inherit; text-align: left; transition: border-color .15s ease, box-shadow .15s ease; }
+.email-update-control:hover:not(:disabled), .email-update-control:focus-visible { border-color: #d4af37; box-shadow: 0 0 0 3px #d4af3726; outline: none; }
+.email-update-control:disabled { cursor: wait; opacity: .72; }
 .communication-status span { color: #64748b; font-size: 12px; font-weight: 700; }.communication-status strong { color: #187348; font-size: 13px; }
 @media (max-width: 800px) {
   .public-header { width: min(100% - 28px,1180px); }
