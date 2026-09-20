@@ -1620,16 +1620,38 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
       await finish()
       return
     }
+    if (selectedLocation.latitude == null || selectedLocation.longitude == null) {
+      setBusy(false)
+      setError("This location is still being verified by TeachersVIP. Choose another participating location or try again later.")
+      return
+    }
     if (!navigator.geolocation) {
       setBusy(false)
-      setError("Allow location access to use this deal.")
+      setError("Location services are unavailable on this device. You can still use Get Directions, but this offer cannot unlock without an on-site location check.")
       return
+    }
+    // A permission preflight lets us give a useful recovery path instead of
+    // silently failing after the browser prompt has already been dismissed.
+    try {
+      const permission = await navigator.permissions?.query({ name: "geolocation" as PermissionName })
+      if (permission?.state === "denied") {
+        setBusy(false)
+        setError("Location access is blocked. Enable location for TeachersVIP in your browser settings, then tap Use Deal again.")
+        return
+      }
+    } catch {
+      // Older Safari versions do not expose the permissions API; getCurrentPosition remains authoritative.
     }
     navigator.geolocation.getCurrentPosition(
       (position) => void finish(position.coords, position.timestamp),
-      () => {
+      (positionError) => {
         setBusy(false)
-        setError("Allow location access to use this deal.")
+        const message = positionError.code === GeolocationPositionError.PERMISSION_DENIED
+          ? "Location access is required to unlock this on-site offer. Allow it for TeachersVIP and try again."
+          : positionError.code === GeolocationPositionError.TIMEOUT
+            ? "We could not get a fresh location in time. Move closer to the business, check that Location Services are on, and try again."
+            : "Your location could not be confirmed. Check Location Services and try again from the participating business."
+        setError(message)
       },
       { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 },
     )
@@ -1710,6 +1732,9 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
             <p className="business-address">
               {selectedLocation.address}
               {deal.distance ? ` · ${deal.distance}` : ""}
+              {selectedLocation.radiusMeters
+                ? ` · verified within ${selectedLocation.radiusMeters} m`
+                : ""}
             </p>
           )}
           <div className="restriction">
@@ -1778,15 +1803,13 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
                   ? "This online offer access is recorded without geolocation."
                   : "This is a Verified On-Site Deal Activation, not a confirmed purchase."}
               </p>
-              {activation.redemptionMethod === "cashier_instruction" && (
-                <Link
-                  className="action action-soft"
-                  to={`/vip-card?deal=${encodeURIComponent(deal.id)}`}
-                >
-                  <IdentificationCard size={19} />
-                  Show VIP Card
-                </Link>
-              )}
+              <Link
+                className="action action-soft"
+                to={`/vip-card?deal=${encodeURIComponent(deal.id)}`}
+              >
+                <IdentificationCard size={19} />
+                Show VIP Card
+              </Link>
             </section>
           ) : (
             <div className="flow-actions">
