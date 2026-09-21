@@ -86,6 +86,14 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
       businessName: "Business name",
       businessEmail: "Business email",
       proposedDeal: "Proposed deal",
+      fullName: "Full name",
+      educatorEmail: "Educator email",
+      contactInformation: "Contact information",
+      socialHandles: "Social handles",
+      followerRange: "Follower range",
+      sampleContent: "Sample content",
+      rating: "Rating",
+      reviewText: "Review",
       email: "Email address",
       role: "Educator role",
       roleAttestation: "Eligibility confirmation",
@@ -109,6 +117,10 @@ function verificationEmailHtml(verificationUrl: string) {
 
 function passwordResetEmailHtml(resetUrl: string) {
   return `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#0f172a;padding:28px"><h1>Reset your TeachersVIP password</h1><p>Use the secure link below to choose a new password. This link expires in 30 minutes.</p><p><a href="${resetUrl}">Reset password</a></p><p>If you did not request this, you can safely ignore this email.</p></body></html>`
+}
+
+function creatorNetworkVerificationEmailHtml(verificationUrl: string) {
+  return `<!doctype html><html><body style="margin:0;padding:28px;background:#eef2f7;font-family:Arial,sans-serif;color:#0f172a"><main style="max-width:560px;margin:auto;padding:32px;border-radius:22px;background:#fff"><p style="margin:0;color:#8a6d1a;font-size:12px;font-weight:bold;letter-spacing:1.2px;text-transform:uppercase">TeachersVIP Creator Network</p><h1 style="margin:10px 0 14px;font-size:29px">Confirm your educator email</h1><p style="line-height:1.6">Confirm this email address to submit your private Creator Network interest form. This does not create an account, a campaign, or a creator commitment.</p><p><a href="${verificationUrl}" style="display:inline-block;padding:14px 20px;border-radius:999px;background:#d4af37;color:#06101e;font-weight:bold;text-decoration:none">Confirm educator email</a></p><p style="color:#526174;font-size:13px;line-height:1.6">This link expires in 30 minutes. If you did not submit this form, you can safely ignore this email.</p></main></body></html>`
 }
 
 function newUserEmailHtml(user: {
@@ -257,11 +269,21 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     }
     return configured
   }
+  const requireVerificationEmailDelivery = () => {
+    if (!resend && config.NODE_ENV === "production")
+      throw Object.assign(
+        new Error(
+          "Email confirmation is temporarily unavailable. Please try again later.",
+        ),
+        { statusCode: 503 },
+      )
+  }
   const sendEducatorVerification = async (
     request: FastifyRequest,
     userId: string,
     schoolEmail: string,
   ) => {
+    requireVerificationEmailDelivery()
     const token = randomToken()
     const activeCase = await db.query<{ id: string }>(
       `SELECT id FROM educator_verification_cases WHERE user_id=$1 AND work_email=$2 AND status IN ('email_pending','manual_review') ORDER BY created_at DESC LIMIT 1`,
@@ -321,6 +343,48 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       app.log.warn(
         { verificationUrl },
         "Resend is not configured; returning a temporary verification URL for testing",
+      )
+    return verificationUrl
+  }
+
+  const sendCreatorNetworkVerification = async (
+    request: FastifyRequest,
+    submissionId: string,
+    educatorEmail: string,
+  ) => {
+    requireVerificationEmailDelivery()
+    const token = randomToken()
+    await db.query(
+      `INSERT INTO creator_network_email_verifications(id,submission_id,token_hash,expires_at)
+       VALUES($1,$2,$3,now()+interval '30 minutes')`,
+      [randomUUID(), submissionId, tokenHash(token)],
+    )
+    await db.query(
+      `UPDATE creator_network_submissions
+       SET email_verification_sent_at=now(),updated_at=now()
+       WHERE id=$1`,
+      [submissionId],
+    )
+    const verificationUrl = `${publicOrigin(request)}/creator-network?verify=${encodeURIComponent(token)}`
+    if (resend) {
+      const { error } = await resend.emails.send({
+        from: config.RESEND_FROM_EMAIL,
+        to: educatorEmail,
+        subject: "Confirm your TeachersVIP Creator Network email",
+        html: creatorNetworkVerificationEmailHtml(verificationUrl),
+        text: `Confirm your educator email to submit your private TeachersVIP Creator Network interest form. This link expires in 30 minutes:\n\n${verificationUrl}`,
+      })
+      if (error) {
+        app.log.error({ resendError: error }, "Resend rejected Creator Network confirmation")
+        throw Object.assign(
+          new Error("The confirmation email could not be sent. Please try again shortly."),
+          { statusCode: 502 },
+        )
+      }
+    } else
+      app.log.warn(
+        { verificationUrl },
+        "Resend is not configured; returning a temporary Creator Network verification URL for testing",
       )
     return verificationUrl
   }
@@ -509,6 +573,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         }),
         request.body,
       )
+      requireVerificationEmailDelivery()
       const id = randomUUID()
       const caseId = randomUUID()
       const normalized = normalizeEmail(body.schoolEmail)
@@ -583,7 +648,12 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       await createSession(reply, id)
       return reply
         .code(201)
-        .send({ ok: true, ...(!resend ? { verificationUrl } : {}) })
+        .send({
+          ok: true,
+          ...(config.NODE_ENV !== "production" && !resend
+            ? { verificationUrl }
+            : {}),
+        })
     },
   )
 
@@ -921,6 +991,248 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       },
       adminEmail: admin.personal_email,
     }
+  })
+
+  app.get("/api/admin/creator-network", async (request) => {
+    requireSuperadmin(request)
+    const query = parse(
+      z.object({
+        city: z.string().trim().max(120).optional(),
+        platform: z.string().trim().max(64).optional(),
+        niche: z.string().trim().max(80).optional(),
+        followerRange: z.string().trim().max(80).optional(),
+        status: z.enum(["new", "contacted", "archived"]).optional(),
+      }),
+      request.query,
+    )
+    const [submissions, cities, platforms, niches, followerRanges] =
+      await Promise.all([
+        db.query(
+          `SELECT id,full_name,city,educator_email,contact_information,
+            social_handles,platforms,follower_range,content_niches,
+            sample_content,opportunity_interests,contact_consent,status,
+            email_verified_at,created_at,updated_at
+           FROM creator_network_submissions
+           WHERE email_verified_at IS NOT NULL
+             AND ($1::text IS NULL OR lower(city)=lower($1))
+             AND ($2::text IS NULL OR $2=ANY(platforms))
+             AND ($3::text IS NULL OR $3=ANY(content_niches))
+             AND ($4::text IS NULL OR follower_range=$4)
+             AND ($5::text IS NULL OR status=$5)
+           ORDER BY created_at DESC
+           LIMIT 250`,
+          [
+            query.city ?? null,
+            query.platform ?? null,
+            query.niche ?? null,
+            query.followerRange ?? null,
+            query.status ?? null,
+          ],
+        ),
+        db.query<{ value: string }>(
+          `SELECT DISTINCT city AS value FROM creator_network_submissions WHERE email_verified_at IS NOT NULL ORDER BY value`,
+        ),
+        db.query<{ value: string }>(
+          `SELECT DISTINCT platform AS value
+           FROM creator_network_submissions
+           CROSS JOIN LATERAL unnest(platforms) AS platform
+           WHERE email_verified_at IS NOT NULL
+           ORDER BY value`,
+        ),
+        db.query<{ value: string }>(
+          `SELECT DISTINCT niche AS value
+           FROM creator_network_submissions
+           CROSS JOIN LATERAL unnest(content_niches) AS niche
+           WHERE email_verified_at IS NOT NULL
+           ORDER BY value`,
+        ),
+        db.query<{ value: string }>(
+          `SELECT DISTINCT follower_range AS value FROM creator_network_submissions WHERE email_verified_at IS NOT NULL ORDER BY value`,
+        ),
+      ])
+    return {
+      submissions: submissions.rows,
+      filters: {
+        cities: cities.rows.map((row) => row.value),
+        platforms: platforms.rows.map((row) => row.value),
+        niches: niches.rows.map((row) => row.value),
+        followerRanges: followerRanges.rows.map((row) => row.value),
+      },
+    }
+  })
+
+  app.patch("/api/admin/creator-network/:id", async (request) => {
+    const admin = requireSuperadmin(request)
+    const { id } = parse(z.object({ id: z.string().uuid() }), request.params)
+    const body = parse(
+      z.object({ status: z.enum(["new", "contacted", "archived"]) }),
+      request.body,
+    )
+    const updated = await db.query<{ id: string }>(
+       `UPDATE creator_network_submissions
+       SET status=$1,updated_at=now()
+       WHERE id=$2 AND email_verified_at IS NOT NULL
+       RETURNING id`,
+      [body.status, id],
+    )
+    if (!updated.rows[0])
+      throw Object.assign(new Error("Creator submission not found."), {
+        statusCode: 404,
+      })
+    await db.query(
+      `INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata)
+       VALUES($1,$2,'updated','creator_network_submission',$3,$4)`,
+      [randomUUID(), admin.id, id, JSON.stringify({ status: body.status })],
+    )
+    return { ok: true }
+  })
+
+  app.get("/api/admin/activation-analytics", async (request) => {
+    requireSuperadmin(request)
+    const query = parse(
+      z.object({
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        businessId: z.string().trim().min(1).max(160).optional(),
+        locationId: z.string().trim().min(1).max(160).optional(),
+      }),
+      request.query,
+    )
+    if (query.dateFrom && query.dateTo && query.dateFrom > query.dateTo)
+      throw Object.assign(new Error("Start date must be on or before end date."), {
+        statusCode: 400,
+      })
+    const values = [
+      query.dateFrom ?? null,
+      query.dateTo ?? null,
+      query.businessId ?? null,
+      query.locationId ?? null,
+    ]
+    const [metrics, activity, businesses, locations] = await Promise.all([
+      db.query<{
+        verified_on_site_activations: number
+        unique_educators: number
+        repeat_usage: number
+        online_offer_accesses: number
+        denied_on_site_attempts: number
+      }>(
+        `WITH filtered AS (
+           SELECT a.* FROM deal_activations a
+           WHERE ($1::date IS NULL OR a.created_at >= $1::date)
+             AND ($2::date IS NULL OR a.created_at < ($2::date + interval '1 day'))
+             AND ($3::text IS NULL OR a.business_id=$3)
+             AND ($4::text IS NULL OR a.business_location_id=$4)
+         ), ranked AS (
+           SELECT *,row_number() OVER (PARTITION BY user_id,business_id,business_location_id ORDER BY created_at) AS visit_number
+           FROM filtered
+           WHERE outcome='successful' AND activation_type='verified_on_site'
+         )
+         SELECT
+           (SELECT count(*)::int FROM ranked) AS verified_on_site_activations,
+           (SELECT count(DISTINCT user_id)::int FROM ranked) AS unique_educators,
+           (SELECT count(*)::int FROM ranked WHERE visit_number > 1) AS repeat_usage,
+           (SELECT count(*)::int FROM filtered WHERE outcome='successful' AND activation_type='online_offer_access') AS online_offer_accesses,
+           (SELECT count(*)::int FROM filtered WHERE outcome='denied' AND activation_type='verified_on_site') AS denied_on_site_attempts`,
+        values,
+      ),
+      db.query<{
+        business_name: string
+        location_name: string | null
+        activations: number
+        unique_educators: number
+        repeat_usage: number
+      }>(
+        `WITH ranked AS (
+           SELECT a.*,row_number() OVER (PARTITION BY a.user_id,a.business_id,a.business_location_id ORDER BY a.created_at) AS visit_number
+           FROM deal_activations a
+           WHERE a.outcome='successful' AND a.activation_type='verified_on_site'
+             AND ($1::date IS NULL OR a.created_at >= $1::date)
+             AND ($2::date IS NULL OR a.created_at < ($2::date + interval '1 day'))
+             AND ($3::text IS NULL OR a.business_id=$3)
+             AND ($4::text IS NULL OR a.business_location_id=$4)
+         )
+         SELECT b.name AS business_name,COALESCE(bl.location_name,bl.address,'Unknown location') AS location_name,
+           count(*)::int AS activations,count(DISTINCT ranked.user_id)::int AS unique_educators,
+           count(*) FILTER (WHERE visit_number > 1)::int AS repeat_usage
+         FROM ranked
+         JOIN businesses b ON b.id=ranked.business_id
+         LEFT JOIN business_locations bl ON bl.id=ranked.business_location_id
+         GROUP BY b.id,b.name,bl.id,bl.location_name,bl.address
+         ORDER BY activations DESC,b.name
+         LIMIT 250`,
+        values,
+      ),
+      db.query<{ id: string, name: string }>(
+        "SELECT id,name FROM businesses ORDER BY name",
+      ),
+      db.query<{ id: string, business_id: string, name: string }>(
+        `SELECT l.id,l.business_id,concat(b.name,' · ',COALESCE(l.location_name,l.address)) AS name
+         FROM business_locations l JOIN businesses b ON b.id=l.business_id
+         WHERE l.active ORDER BY b.name,l.location_name,l.address`,
+      ),
+    ])
+    return {
+      metrics: metrics.rows[0] ?? {
+        verified_on_site_activations: 0,
+        unique_educators: 0,
+        repeat_usage: 0,
+        online_offer_accesses: 0,
+        denied_on_site_attempts: 0,
+      },
+      activity: activity.rows,
+      filters: { businesses: businesses.rows, locations: locations.rows },
+    }
+  })
+
+  app.get("/api/admin/business-reviews", async (request) => {
+    requireSuperadmin(request)
+    const query = parse(
+      z.object({
+        status: z.enum(["pending", "approved", "rejected"]).optional(),
+        businessId: z.string().trim().min(1).max(160).optional(),
+      }),
+      request.query,
+    )
+    const result = await db.query(
+      `SELECT r.id,r.business_id,r.rating,r.review_text,r.status,r.moderation_notes,r.created_at,r.updated_at,
+        b.name AS business_name,u.first_name,u.last_name,a.activation_type,a.created_at AS activated_at
+       FROM business_reviews r
+       JOIN businesses b ON b.id=r.business_id
+       JOIN users u ON u.id=r.user_id
+       JOIN deal_activations a ON a.id=r.activation_id
+       WHERE ($1::text IS NULL OR r.status=$1)
+         AND ($2::text IS NULL OR r.business_id=$2)
+       ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END,r.created_at DESC
+       LIMIT 250`,
+      [query.status ?? null, query.businessId ?? null],
+    )
+    return { reviews: result.rows }
+  })
+
+  app.patch("/api/admin/business-reviews/:id", async (request) => {
+    const admin = requireSuperadmin(request)
+    const { id } = parse(z.object({ id: z.string().uuid() }), request.params)
+    const body = parse(
+      z.object({
+        status: z.enum(["approved", "rejected"]),
+        moderationNotes: z.string().trim().max(1000).optional(),
+      }),
+      request.body,
+    )
+    const updated = await db.query<{ id: string }>(
+      `UPDATE business_reviews
+       SET status=$1,moderation_notes=$2,moderated_by_user_id=$3,moderated_at=now(),updated_at=now()
+       WHERE id=$4 RETURNING id`,
+      [body.status, body.moderationNotes || null, admin.id, id],
+    )
+    if (!updated.rows[0])
+      throw Object.assign(new Error("Business review not found."), { statusCode: 404 })
+    await db.query(
+      `INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata)
+       VALUES($1,$2,'updated','business_review',$3,$4)`,
+      [randomUUID(), admin.id, id, JSON.stringify({ status: body.status })],
+    )
+    return { ok: true }
   })
 
   app.get("/api/admin/verifications", async (request) => {
@@ -1970,7 +2282,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const result = await db.query(
       `SELECT u.id,u.personal_email,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.email_updates,u.work_email,u.educator_verified_at,m.member_id,
       COALESCE((SELECT sum(d.estimated_savings_cents) FROM deal_activations a JOIN deals d ON d.id=a.deal_id WHERE a.user_id=u.id AND a.outcome='successful'),0)::int estimated_savings_cents,
-      COALESCE((SELECT count(*) FROM deal_activations a WHERE a.user_id=u.id AND a.outcome='successful'),0)::int reported_uses
+      COALESCE((SELECT count(*) FROM deal_activations a WHERE a.user_id=u.id AND a.outcome='successful'),0)::int activation_count
       FROM users u JOIN member_cards m ON m.user_id=u.id WHERE u.id=$1`,
       [user.id],
     )
@@ -2256,12 +2568,11 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   )
 
   app.get("/api/me/reported-uses", async (request) => {
-    const user = requireUser(request)
-    const result = await db.query(
-      `SELECT r.id,r.deal_id,r.reported_at,r.estimated_savings_cents,d.title,b.name business_name FROM deal_use_reports r JOIN deals d ON d.id=r.deal_id JOIN businesses b ON b.id=d.business_id WHERE r.user_id=$1 ORDER BY r.reported_at DESC`,
-      [user.id],
+    requireUser(request)
+    throw Object.assign(
+      new Error("Self-reported deal use has been retired. Use activation history instead."),
+      { statusCode: 410 },
     )
-    return { reports: result.rows }
   })
 
   app.get("/api/me/activations", async (request) => {
@@ -2307,6 +2618,217 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       ],
     )
     return { ok: true }
+  })
+
+  app.post(
+    "/api/creator-network",
+    { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } },
+    async (request, reply) => {
+      const body = parse(
+        z.object({
+          fullName: z.string().trim().min(2).max(140),
+          city: z.string().trim().min(2).max(120),
+          educatorEmail: z.email().transform((value) => value.toLowerCase()),
+          contactInformation: z.string().trim().min(5).max(500),
+          socialHandles: z.string().trim().min(2).max(1000),
+          platforms: z.array(z.string().trim().min(2).max(64)).min(1).max(8),
+          followerRange: z.string().trim().min(2).max(80),
+          contentNiches: z
+            .array(z.string().trim().min(2).max(80))
+            .min(1)
+            .max(8),
+          sampleContent: z.string().trim().min(5).max(1500),
+          opportunityInterests: z
+            .array(z.string().trim().min(2).max(100))
+            .min(1)
+            .max(8),
+          contactConsent: z.literal(true),
+        }),
+        request.body,
+      )
+      const verifiedMember =
+        request.currentUser?.educator_verified_at && request.currentUser.work_email
+          ? request.currentUser
+          : null
+      if (
+        verifiedMember?.work_email &&
+        verifiedMember.work_email.toLowerCase() !== body.educatorEmail
+      )
+        throw Object.assign(
+          new Error(
+            "Use the verified educator email on your TeachersVIP membership for this submission.",
+          ),
+          { statusCode: 400 },
+        )
+      if (!verifiedMember) {
+        requireVerificationEmailDelivery()
+        const recentlyRequested = await db.query<{ id: string }>(
+          `SELECT id FROM creator_network_submissions
+           WHERE educator_email=$1 AND email_verified_at IS NULL
+             AND email_verification_sent_at > now()-interval '15 minutes'
+           ORDER BY email_verification_sent_at DESC LIMIT 1`,
+          [body.educatorEmail],
+        )
+        if (recentlyRequested.rows[0])
+          throw Object.assign(
+            new Error(
+              "A confirmation email was recently sent. Check that inbox before requesting another one.",
+            ),
+            { statusCode: 429 },
+          )
+      }
+      const id = randomUUID()
+      await db.query(
+        `INSERT INTO creator_network_submissions(
+          id,full_name,city,educator_email,contact_information,social_handles,
+          platforms,follower_range,content_niches,sample_content,
+          opportunity_interests,contact_consent,submitted_by_user_id,email_verified_at
+        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [
+          id,
+          body.fullName,
+          body.city,
+          body.educatorEmail,
+          body.contactInformation,
+          body.socialHandles,
+          body.platforms,
+          body.followerRange,
+          body.contentNiches,
+          body.sampleContent,
+          body.opportunityInterests,
+          body.contactConsent,
+          verifiedMember?.id ?? null,
+          verifiedMember ? new Date() : null,
+        ],
+      )
+      if (verifiedMember)
+        return reply.code(201).send({
+          ok: true,
+          submissionId: id,
+          accepted: true,
+          emailVerificationRequired: false,
+        })
+      try {
+        const verificationUrl = await sendCreatorNetworkVerification(
+          request,
+          id,
+          body.educatorEmail,
+        )
+        return reply.code(202).send({
+          ok: true,
+          submissionId: id,
+          accepted: false,
+          emailVerificationRequired: true,
+          ...(config.NODE_ENV !== "production" && !resend
+            ? { verificationUrl }
+            : {}),
+        })
+      } catch (error) {
+        await db.query("DELETE FROM creator_network_submissions WHERE id=$1", [id])
+        throw error
+      }
+    },
+  )
+
+  app.post(
+    "/api/creator-network/verify",
+    { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } },
+    async (request) => {
+      const body = parse(z.object({ token: z.string().min(20).max(500) }), request.body)
+      const client = await db.connect()
+      try {
+        await client.query("BEGIN")
+        const verification = await client.query<{
+          id: string
+          submission_id: string
+          expires_at: Date
+          consumed_at: Date | null
+        }>(
+          `SELECT id,submission_id,expires_at,consumed_at
+           FROM creator_network_email_verifications
+           WHERE token_hash=$1 FOR UPDATE`,
+          [tokenHash(body.token)],
+        )
+        const record = verification.rows[0]
+        if (!record || record.consumed_at || record.expires_at <= new Date())
+          throw Object.assign(
+            new Error("This Creator Network email confirmation link is invalid or has expired."),
+            { statusCode: 400 },
+          )
+        await client.query(
+          `UPDATE creator_network_email_verifications SET consumed_at=now() WHERE id=$1`,
+          [record.id],
+        )
+        await client.query(
+          `UPDATE creator_network_submissions
+           SET email_verified_at=now(),updated_at=now()
+           WHERE id=$1 AND email_verified_at IS NULL`,
+          [record.submission_id],
+        )
+        await client.query("COMMIT")
+        return { ok: true }
+      } catch (error) {
+        await client.query("ROLLBACK")
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+  )
+
+  app.get("/api/business-reviews", async () => {
+    const result = await db.query<{
+      id: string
+      business_name: string
+      rating: number
+      review_text: string
+      created_at: string
+    }>(
+      `SELECT r.id,b.name AS business_name,r.rating,r.review_text,r.created_at
+       FROM business_reviews r JOIN businesses b ON b.id=r.business_id
+       WHERE r.status='approved' AND b.published
+       ORDER BY r.created_at DESC LIMIT 6`,
+    )
+    return { reviews: result.rows }
+  })
+
+  app.post("/api/businesses/:id/reviews", async (request, reply) => {
+    const user = requireVerified(request)
+    const { id: businessId } = parse(z.object({ id: z.string().min(1).max(160) }), request.params)
+    const body = parse(
+      z.object({
+        rating: z.coerce.number().int().min(1).max(5),
+        reviewText: z.string().trim().min(10).max(1500),
+      }),
+      request.body,
+    )
+    const business = await db.query<{ id: string }>(
+      "SELECT id FROM businesses WHERE id=$1 AND published",
+      [businessId],
+    )
+    if (!business.rows[0])
+      throw Object.assign(new Error("Business not found."), { statusCode: 404 })
+    const activation = await db.query<{ id: string }>(
+      `SELECT id FROM deal_activations
+       WHERE user_id=$1 AND business_id=$2 AND outcome='successful'
+       ORDER BY created_at DESC LIMIT 1`,
+      [user.id, businessId],
+    )
+    if (!activation.rows[0])
+      throw Object.assign(
+        new Error("Activate one of this business’s offers before sharing feedback."),
+        { statusCode: 403 },
+      )
+    const saved = await db.query<{ id: string }>(
+      `INSERT INTO business_reviews(id,business_id,user_id,activation_id,rating,review_text,status)
+       VALUES($1,$2,$3,$4,$5,$6,'pending')
+       ON CONFLICT (user_id,business_id) DO UPDATE
+       SET activation_id=EXCLUDED.activation_id,rating=EXCLUDED.rating,review_text=EXCLUDED.review_text,
+           status='pending',moderation_notes=NULL,moderated_by_user_id=NULL,moderated_at=NULL,updated_at=now()
+       RETURNING id`,
+      [randomUUID(), businessId, user.id, activation.rows[0].id, body.rating, body.reviewText],
+    )
+    return reply.code(201).send({ ok: true, reviewId: saved.rows[0]?.id })
   })
 
   app.post(

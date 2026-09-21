@@ -27,6 +27,8 @@ Online offers use the same controlled activation and usage-limit service without
 
 The dashboard labels successful in-person records **Verified On-Site Deal Activations** and reports unique educators, repeat usage, and activity by business/location. These records establish proximity and access to an offer; they do not establish a completed purchase. Exact completed-purchase reporting requires the optional enhanced POS integration.
 
+The activation dashboard can be filtered by date, business, and location. Its repeat-usage count means each successful on-site activation after an educator’s first successful activation at the same business and location during the selected period. It separately reports online offer accesses and denied on-site attempts; those categories are never added to verified on-site activation totals.
+
 Browser geolocation is a useful proximity control, not tamper-proof proof of presence. Exact submitted coordinates are encrypted and retained for a short audit window (30 days by default); the scheduled purge removes them while preserving the selected location, distance, accuracy, outcome, and aggregate reporting fields.
 
 ## Business onboarding
@@ -41,6 +43,12 @@ The application asks a business for:
 - standard geolocation tracking or enhanced POS tracking.
 
 An administrator reviews the application, supplies reviewed latitude/longitude for every location, confirms the geofence radius, configures the business and offer records, and chooses whether to publish them.
+
+## Creator Network and business reviews
+
+The Teacher Creator Network form is public: it does not require a TeachersVIP account. A public submission is held privately until the submitted educator email is confirmed through a single-use, 30-minute link. A signed-in verified member may submit with their already verified membership email without another confirmation. Only email-confirmed submissions appear in the private admin list, where city, platform, content niche, audience size, and workflow status can be filtered. Pending public submissions are throttled per email, and production fails closed rather than exposing a temporary confirmation URL when email delivery is not configured.
+
+Verified educators may leave feedback after they successfully activate an offer from a participating business. Reviews start as pending, are moderated by an administrator, and only approved feedback appears publicly. A review describes an educator’s experience with a business after offer access; it is not a completed-purchase record or a POS confirmation.
 
 ## Local development
 
@@ -91,6 +99,8 @@ Run `pnpm locations:purge` at least daily from a Railway cron service or equival
 ## Railway
 
 Use separate staging and production environments and databases. Configure every required value in `.env.example`, enable PostgreSQL backups, test a restore, run the official data imports, review educator domains, and validate Pass2U on devices before launch. `railway.toml` builds the client, applies migrations and seed upserts, starts Fastify, and checks `/health/ready`.
+
+Before production launch, apply every pending migration, configure `RESEND_API_KEY` and `RESEND_FROM_EMAIL`, and verify the Creator Network confirmation email on a real mailbox. Test one on-site activation over HTTPS with a physical device at an approved location, one outside-radius denial, an online offer access, review moderation, and filtered dashboard totals. Browser geolocation and the local test build cannot prove the device, HTTPS permission, mail-delivery, or production-database portions of that checklist.
 
 ## Commands
 

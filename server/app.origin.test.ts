@@ -67,4 +67,39 @@ describe('production request origin protection', () => {
     expect(response.statusCode).toBe(400)
     expect(response.json()).toEqual({ error: 'First name must contain at least 2 characters.' })
   })
+
+  it('fails closed when production email confirmation is not configured', async () => {
+    const response = await createApp().inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      headers: { origin: 'https://canonical.example.com' },
+      payload: {
+        firstName: 'Taylor', lastName: 'Teacher', schoolEmail: 'taylor@example.edu',
+        city: 'Houston, Texas', password: 'long-enough-password', role: 'K-12 educator',
+        roleAttestation: true, smsConsent: false,
+      },
+    })
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toEqual({
+      error: 'Email confirmation is temporarily unavailable. Please try again later.',
+    })
+  })
+
+  it('does not create a public Creator Network verification path without production email delivery', async () => {
+    const response = await createApp().inject({
+      method: 'POST',
+      url: '/api/creator-network',
+      headers: { origin: 'https://canonical.example.com' },
+      payload: {
+        fullName: 'Taylor Creator', city: 'Austin', educatorEmail: 'taylor@example.edu',
+        contactInformation: '555 0100', socialHandles: '@taylor', platforms: ['Instagram'],
+        followerRange: '1,000–4,999', contentNiches: ['Education'], sampleContent: 'https://example.edu/taylor',
+        opportunityInterests: ['Paid content'], contactConsent: true,
+      },
+    })
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toEqual({
+      error: 'Email confirmation is temporarily unavailable. Please try again later.',
+    })
+  })
 })

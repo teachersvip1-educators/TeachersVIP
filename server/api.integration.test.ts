@@ -12,6 +12,7 @@ suite('TeachersVIP educator verification and activation API', () => {
   const personalEmail = `teacher-${suffix}@gmail.com`
   const staffDomain = `staff-${suffix}.example.edu`
   const staffEmail = `professor@${staffDomain}`
+  const creatorEmail = `creator-${suffix}@example.test`
   const config = getConfig({
     NODE_ENV: 'development', DATABASE_URL: databaseUrl ?? 'postgresql://test:test@localhost:5432/teachersvip_test',
     APP_URL: 'http://localhost:8443', SESSION_SECRET: 'integration-test-session-secret-32-characters',
@@ -27,6 +28,7 @@ suite('TeachersVIP educator verification and activation API', () => {
   })
 
   afterAll(async () => {
+    await db.query('DELETE FROM creator_network_submissions WHERE educator_email=ANY($1::citext[])', [[creatorEmail, staffEmail]])
     await db.query('DELETE FROM users WHERE personal_email=ANY($1::citext[])', [[personalEmail, staffEmail]])
     await db.query('DELETE FROM educator_domains WHERE normalized_domain=$1', [staffDomain])
     await app.close()
@@ -62,6 +64,59 @@ suite('TeachersVIP educator verification and activation API', () => {
     expect(legacyReport.statusCode).toBe(410)
 
     const profile = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie } })
-    expect(profile.json().profile).toMatchObject({ educator_verified_at: expect.any(String), reported_uses: 1 })
+    expect(profile.json().profile).toMatchObject({ educator_verified_at: expect.any(String), activation_count: 1 })
+
+    const publicCreator = await app.inject({
+      method: 'POST', url: '/api/creator-network', payload: {
+        fullName: 'Public Creator', city: 'Austin', educatorEmail: creatorEmail,
+        contactInformation: '555 0100', socialHandles: '@publiccreator', platforms: ['Instagram'],
+        followerRange: '1,000–4,999', contentNiches: ['Education'], sampleContent: 'https://example.test/sample',
+        opportunityInterests: ['Paid content'], contactConsent: true,
+      },
+    })
+    expect(publicCreator.statusCode).toBe(202)
+    expect(publicCreator.json()).toMatchObject({ accepted: false, emailVerificationRequired: true })
+    const creatorToken = new URL(publicCreator.json().verificationUrl).searchParams.get('verify')
+    const pendingCreator = await db.query<{ email_verified_at: Date | null }>('SELECT email_verified_at FROM creator_network_submissions WHERE educator_email=$1', [creatorEmail])
+    expect(pendingCreator.rows[0]?.email_verified_at).toBeNull()
+
+    const throttledCreator = await app.inject({
+      method: 'POST', url: '/api/creator-network', payload: {
+        fullName: 'Public Creator', city: 'Austin', educatorEmail: creatorEmail,
+        contactInformation: '555 0100', socialHandles: '@publiccreator', platforms: ['Instagram'],
+        followerRange: '1,000–4,999', contentNiches: ['Education'], sampleContent: 'https://example.test/sample',
+        opportunityInterests: ['Paid content'], contactConsent: true,
+      },
+    })
+    expect(throttledCreator.statusCode).toBe(429)
+
+    const confirmedCreator = await app.inject({ method: 'POST', url: '/api/creator-network/verify', payload: { token: creatorToken } })
+    expect(confirmedCreator.statusCode).toBe(200)
+    const acceptedCreator = await db.query<{ email_verified_at: Date | null }>('SELECT email_verified_at FROM creator_network_submissions WHERE educator_email=$1', [creatorEmail])
+    expect(acceptedCreator.rows[0]?.email_verified_at).toBeTruthy()
+
+    const memberCreator = await app.inject({
+      method: 'POST', url: '/api/creator-network', headers: { cookie }, payload: {
+        fullName: 'Verified Creator', city: 'Houston', educatorEmail: staffEmail,
+        contactInformation: '555 0101', socialHandles: '@verifiedcreator', platforms: ['YouTube'],
+        followerRange: '5,000–24,999', contentNiches: ['Teacher life'], sampleContent: 'https://example.test/verified',
+        opportunityInterests: ['Promotions'], contactConsent: true,
+      },
+    })
+    expect(memberCreator.statusCode).toBe(201)
+    expect(memberCreator.json()).toMatchObject({ accepted: true, emailVerificationRequired: false })
+
+    const submittedReview = await app.inject({
+      method: 'POST', url: '/api/businesses/teacher-tech/reviews', headers: { cookie },
+      payload: { rating: 5, reviewText: 'The redemption instructions were clear and easy to use.' },
+    })
+    expect(submittedReview.statusCode).toBe(201)
+    const hiddenReviews = await app.inject({ method: 'GET', url: '/api/business-reviews' })
+    expect(hiddenReviews.json().reviews).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: submittedReview.json().reviewId })]))
+    await db.query("UPDATE business_reviews SET status='approved' WHERE id=$1", [submittedReview.json().reviewId])
+    const publishedReviews = await app.inject({ method: 'GET', url: '/api/business-reviews' })
+    expect(publishedReviews.json().reviews).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: submittedReview.json().reviewId, business_name: 'Sunday Supply', rating: 5 }),
+    ]))
   })
 })

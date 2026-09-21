@@ -24,4 +24,29 @@ describe('business location and activation migration contract', () => {
     expect(sql).toContain('email_updates')
     expect(sql).not.toContain('Educator Partner Offer')
   })
+
+  it('keeps Creator Network interest submissions private, filterable, and separate from business campaigns', async () => {
+    const sql = await readFile(new URL('../db/migrations/012_creator_network.sql', import.meta.url), 'utf8')
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS creator_network_submissions')
+    expect(sql).toContain("status IN ('new','contacted','archived')")
+    expect(sql).toContain('creator_network_city_idx')
+    expect(sql).toContain('creator_network_platforms_idx')
+    expect(sql).toContain('creator_network_niches_idx')
+    expect(sql).not.toContain('business_applications')
+  })
+
+  it('requires Creator Network email confirmation before an admin can see a public submission', async () => {
+    const sql = await readFile(new URL('../db/migrations/013_creator_network_email_verification.sql', import.meta.url), 'utf8')
+    expect(sql).toContain('creator_network_email_verifications')
+    expect(sql).toContain('email_verified_at')
+    expect(sql).toContain('submitted_by_user_id')
+  })
+
+  it('stores moderated business feedback separately from completed purchases', async () => {
+    const sql = await readFile(new URL('../db/migrations/014_business_reviews_and_activation_reporting.sql', import.meta.url), 'utf8')
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS business_reviews')
+    expect(sql).toContain("status IN ('pending','approved','rejected')")
+    expect(sql).toContain('activation_id uuid NOT NULL REFERENCES deal_activations')
+    expect(sql).toContain('deal_activations_reporting_idx')
+  })
 })

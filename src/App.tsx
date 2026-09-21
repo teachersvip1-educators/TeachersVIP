@@ -32,6 +32,7 @@ import {
   MapPin,
   Question,
   ShieldCheck,
+  Star,
   Storefront,
   Tag,
   UserCircle,
@@ -57,7 +58,7 @@ type Profile = SessionUser & {
   educator_verified_at: string | null
   member_id: string
   estimated_savings_cents: number
-  reported_uses: number
+  activation_count: number
 }
 type DealLocation = {
   id: string
@@ -125,6 +126,13 @@ type Card = {
   status: string
   walletStatus: "available" | "active" | "failed" | "pending" | "not_configured"
   walletDownloadUrl: string | null
+}
+type PublicBusinessReview = {
+  id: string
+  business_name: string
+  rating: number
+  review_text: string
+  created_at: string
 }
 
 const GOLD = "#D4AF37",
@@ -206,7 +214,96 @@ function PublicHome() {
         <div><Tag size={30} weight="duotone" /><strong>Explore exclusive offers</strong><span>See the exact benefit before you visit.</span></div>
         <div><MapPin size={30} weight="duotone" /><strong>Use deals simply</strong><span>Activate in-person deals on-site or reveal online promo codes.</span></div>
       </section>
+      <section className="public-about" id="about" aria-labelledby="about-title">
+        <div className="public-section-intro">
+          <span className="public-eyebrow">About TeachersVIP</span>
+          <h2 id="about-title">Built around the educator community.</h2>
+          <p>
+            TeachersVIP is an educator-focused membership and marketing platform
+            connecting verified educators with businesses that appreciate and
+            want to reach the teacher community. Educators receive exclusive
+            offers and opportunities, while businesses gain visibility and
+            build meaningful relationships with educators.
+          </p>
+        </div>
+        <div className="about-pillars">
+          <article>
+            <span>01</span>
+            <h3>Educator Membership</h3>
+            <p>Verified educators discover exclusive local and online offers.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Business Partnerships</h3>
+            <p>Businesses reach educators through offers, marketing campaigns, events, sponsorships, and community initiatives.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Teacher Creator Network</h3>
+            <p>Teacher creators connect with businesses for paid content, reviews, promotions, and campaign opportunities.</p>
+          </article>
+        </div>
+      </section>
+      <PublicBusinessReviews />
+      <section className="creator-callout" id="creator-network" aria-labelledby="creator-title">
+        <div>
+          <span className="public-eyebrow">Teacher Creator Network</span>
+          <h2 id="creator-title">Are You an Educator Who Creates Content?</h2>
+          <p>
+            Tell us about your content, audience, and the opportunities that
+            interest you. We are collecting creator interest for the network.
+          </p>
+        </div>
+        <Link className="public-primary" to="/creator-network">
+          Join the Creator Network <ArrowRight size={18} weight="bold" />
+        </Link>
+      </section>
     </main>
+  )
+}
+
+function PublicBusinessReviews() {
+  const [reviews, setReviews] = useState<PublicBusinessReview[]>([])
+  useEffect(() => {
+    api<{ reviews: PublicBusinessReview[] }>("/business-reviews")
+      .then((result) => setReviews(result.reviews))
+      .catch(() => setReviews([]))
+  }, [])
+  return (
+    <section className="public-reviews" id="business-reviews" aria-labelledby="reviews-title">
+      <div>
+        <span className="public-eyebrow">Business reviews</span>
+        <h2 id="reviews-title">Educator feedback, shared with care.</h2>
+        <p>
+          Feedback is from verified educators who activated an offer. It reflects
+          their experience with a participating business, not a completed purchase.
+        </p>
+      </div>
+      {reviews.length ? (
+        <div className="public-review-list" aria-label="Approved educator reviews">
+          {reviews.slice(0, 3).map((review) => (
+            <article className="public-review-card" key={review.id}>
+              <div>
+                <strong>{review.business_name}</strong>
+                <span aria-label={`${review.rating} out of 5 stars`}>
+                  {Array.from({ length: 5 }, (_, index) => (
+                    <Star key={index} size={15} weight={index < review.rating ? "fill" : "regular"} />
+                  ))}
+                </span>
+              </div>
+              <p>{review.review_text}</p>
+              <small>Verified educator feedback</small>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <aside className="review-placeholder" aria-label="Business reviews awaiting approval">
+          <Buildings size={30} weight="duotone" />
+          <strong>Business Reviews</strong>
+          <span>First reviews coming soon</span>
+        </aside>
+      )}
+    </section>
   )
 }
 
@@ -228,6 +325,255 @@ function PublicPartner() {
       </section>
       <StructuredPartner publicView />
     </div>
+  )
+}
+
+const CREATOR_PLATFORM_OPTIONS = [
+  "Instagram",
+  "TikTok",
+  "YouTube",
+  "Facebook",
+  "Pinterest",
+  "Podcast",
+  "Blog",
+  "Other",
+]
+const CREATOR_NICHE_OPTIONS = [
+  "Classroom ideas",
+  "Teacher life",
+  "Education",
+  "Lifestyle",
+  "Parenting & family",
+  "Humour",
+  "Wellness",
+  "Other",
+]
+const CREATOR_OPPORTUNITY_OPTIONS = [
+  "Paid content",
+  "Business reviews",
+  "Promotions",
+  "Product gifting",
+  "Events",
+  "Sponsorships",
+  "Community initiatives",
+]
+const CREATOR_FOLLOWER_RANGES = [
+  "Under 1,000",
+  "1,000–4,999",
+  "5,000–24,999",
+  "25,000–99,999",
+  "100,000+",
+]
+
+function CreatorNetworkPage({ user }: { user?: SessionUser }) {
+  const [searchParams] = useSearchParams()
+  const [emailConfirmationPending, setEmailConfirmationPending] = useState(false),
+    [confirmed, setConfirmed] = useState(false),
+    [developmentVerificationUrl, setDevelopmentVerificationUrl] = useState<string | null>(null),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("")
+  const verificationToken = searchParams.get("verify")
+  const verifiedMember = Boolean(user?.verified && user.work_email)
+  useEffect(() => {
+    if (!verificationToken) return
+    let active = true
+    setBusy(true)
+    setError("")
+    post<{ ok: boolean }>("/creator-network/verify", { token: verificationToken })
+      .then(() => {
+        if (!active) return
+        setConfirmed(true)
+        window.history.replaceState(null, "", "/creator-network")
+      })
+      .catch((e) => active && setError((e as Error).message))
+      .finally(() => active && setBusy(false))
+    return () => {
+      active = false
+    }
+  }, [verificationToken])
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const platforms = form.getAll("platforms").map(String)
+    const contentNiches = form.getAll("contentNiches").map(String)
+    const opportunityInterests = form.getAll("opportunityInterests").map(String)
+    if (!platforms.length || !contentNiches.length || !opportunityInterests.length) {
+      setError("Choose at least one platform, content niche, and opportunity interest.")
+      return
+    }
+    setBusy(true)
+    setError("")
+    try {
+      const result = await post<{
+        accepted: boolean
+        emailVerificationRequired: boolean
+        verificationUrl?: string
+      }>("/creator-network", {
+        fullName: form.get("fullName"),
+        city: form.get("city"),
+        educatorEmail: verifiedMember ? user?.work_email : form.get("educatorEmail"),
+        contactInformation: form.get("contactInformation"),
+        socialHandles: form.get("socialHandles"),
+        platforms,
+        followerRange: form.get("followerRange"),
+        contentNiches,
+        sampleContent: form.get("sampleContent"),
+        opportunityInterests,
+        contactConsent: form.get("contactConsent") === "on",
+      })
+      if (result.accepted) setConfirmed(true)
+      else {
+        setDevelopmentVerificationUrl(result.verificationUrl || null)
+        setEmailConfirmationPending(true)
+      }
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <main className="public-site creator-network-site">
+      {!user && <PublicHeader />}
+      <section className="creator-network-page">
+        {confirmed ? (
+          <div className="creator-form-success" role="status">
+            <CheckCircle size={42} weight="fill" />
+            <span className="public-eyebrow">Creator Network</span>
+            <h1>Your interest is confirmed.</h1>
+            <p>
+              Your private Creator Network submission is now available to the
+              TeachersVIP admin team. We will only contact you about Creator
+              Network opportunities.
+            </p>
+            <Link className="public-primary" to={user ? "/deals" : "/"}>
+              {user ? "Back to Deals" : "Back to TeachersVIP"}
+            </Link>
+          </div>
+        ) : emailConfirmationPending ? (
+          <div className="creator-form-success" role="status">
+            <CheckCircle size={42} weight="fill" />
+            <span className="public-eyebrow">One more step</span>
+            <h1>Confirm your educator email.</h1>
+            <p>
+              We sent a confirmation link to the educator email you entered.
+              Your submission is not accepted or visible to the admin team until
+              you use that link.
+            </p>
+            {developmentVerificationUrl && (
+              <a className="dev-link" href={developmentVerificationUrl}>
+                Development only: confirm this test submission
+              </a>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="creator-network-intro">
+              <span className="public-eyebrow">Teacher Creator Network</span>
+              <h1>Are You an Educator Who Creates Content?</h1>
+              <p>
+                Join the interest list for educators who create content. This
+                public form only collects your details and interests; it does
+                not create an account or a campaign commitment.
+              </p>
+            </div>
+            <form className="creator-form" onSubmit={submit}>
+              <div className="creator-form-heading">
+                <UserCircle size={28} weight="duotone" />
+                <div>
+                  <h2>Tell us about your creator work</h2>
+                  <p>
+                    {verifiedMember
+                      ? "Your verified member email is already confirmed. This submission remains private."
+                      : "Confirm your educator email after submitting. Until then, your details remain private and are not visible to the admin team."}
+                  </p>
+                </div>
+              </div>
+              <div className="two">
+                <Field label="Full name" name="fullName" required />
+                <Field label="City" name="city" required />
+              </div>
+              <div className="two">
+                <div>
+                  <Field
+                    label="Educator email"
+                    name="educatorEmail"
+                    type="email"
+                    required
+                    defaultValue={verifiedMember ? user?.work_email || "" : ""}
+                    readOnly={verifiedMember}
+                  />
+                  {verifiedMember && <small className="field-note">Verified through your TeachersVIP membership; no additional email confirmation is needed.</small>}
+                </div>
+                <Field label="Contact information" name="contactInformation" required placeholder="Phone, WhatsApp, or preferred contact" />
+              </div>
+              <label className="field">
+                <span>Social handles</span>
+                <textarea name="socialHandles" required minLength={2} placeholder="@yourhandle, profile links, or channel names" />
+              </label>
+              <fieldset className="creator-fieldset">
+                <legend>Platforms</legend>
+                <div className="creator-choice-grid">
+                  {CREATOR_PLATFORM_OPTIONS.map((platform) => (
+                    <label className="creator-choice" key={platform}>
+                      <input type="checkbox" name="platforms" value={platform} />
+                      <span>{platform}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="field">
+                <span>Follower range</span>
+                <select name="followerRange" required defaultValue="">
+                  <option value="" disabled>Select your audience size</option>
+                  {CREATOR_FOLLOWER_RANGES.map((range) => <option key={range} value={range}>{range}</option>)}
+                </select>
+              </label>
+              <fieldset className="creator-fieldset">
+                <legend>Content niche</legend>
+                <div className="creator-choice-grid">
+                  {CREATOR_NICHE_OPTIONS.map((niche) => (
+                    <label className="creator-choice" key={niche}>
+                      <input type="checkbox" name="contentNiches" value={niche} />
+                      <span>{niche}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="field">
+                <span>Sample content</span>
+                <textarea name="sampleContent" required minLength={5} placeholder="Share links to posts, videos, a portfolio, or examples of your work" />
+              </label>
+              <fieldset className="creator-fieldset">
+                <legend>What opportunities interest you?</legend>
+                <div className="creator-choice-grid">
+                  {CREATOR_OPPORTUNITY_OPTIONS.map((opportunity) => (
+                    <label className="creator-choice" key={opportunity}>
+                      <input type="checkbox" name="opportunityInterests" value={opportunity} />
+                      <span>{opportunity}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="creator-consent">
+                <input type="checkbox" name="contactConsent" required />
+                <span>I agree that TeachersVIP may store these details and contact me about Creator Network opportunities.</span>
+              </label>
+              {error && <Notice kind="error">{error}</Notice>}
+              <Button type="submit" disabled={busy}>
+                {busy
+                  ? verificationToken
+                    ? "Confirming your email…"
+                    : "Saving your interest…"
+                  : verifiedMember
+                    ? "Join the Creator Network"
+                    : "Send email confirmation"}
+              </Button>
+            </form>
+          </>
+        )}
+      </section>
+    </main>
   )
 }
 function Button({
@@ -266,6 +612,7 @@ function Field({
   max,
   step,
   readOnly = false,
+  disabled = false,
   inputMode,
 }: {
   label: string
@@ -279,6 +626,7 @@ function Field({
   max?: number
   step?: string
   readOnly?: boolean
+  disabled?: boolean
   inputMode?: "numeric" | "text" | "email" | "tel" | "url"
 }) {
   return (
@@ -295,6 +643,7 @@ function Field({
         max={max}
         step={step}
         readOnly={readOnly}
+        disabled={disabled}
         inputMode={inputMode}
       />
       {readOnly && (
@@ -1512,6 +1861,65 @@ function BarcodeDisplay({ value }: { value: string }) {
   )
 }
 
+function BusinessReviewForm({ businessId }: { businessId: string }) {
+  const [open, setOpen] = useState(false),
+    [busy, setBusy] = useState(false),
+    [sent, setSent] = useState(false),
+    [error, setError] = useState("")
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    setBusy(true)
+    setError("")
+    try {
+      await post(`/businesses/${businessId}/reviews`, {
+        rating: Number(form.get("rating")),
+        reviewText: form.get("reviewText"),
+      })
+      setSent(true)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (sent)
+    return (
+      <p className="review-submission-confirmation" role="status">
+        Thanks — your feedback is awaiting moderation. It will not be presented
+        as a completed purchase.
+      </p>
+    )
+  if (!open)
+    return (
+      <button className="action action-soft review-trigger" onClick={() => setOpen(true)}>
+        Leave business feedback
+      </button>
+    )
+  return (
+    <form className="business-review-form" onSubmit={submit}>
+      <label className="field">
+        <span>Your experience</span>
+        <select name="rating" defaultValue="5" required>
+          {[5, 4, 3, 2, 1].map((rating) => (
+            <option key={rating} value={rating}>{rating} out of 5</option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>Feedback</span>
+        <textarea name="reviewText" required minLength={10} maxLength={1500} placeholder="Share your experience with this participating business." />
+      </label>
+      <p>Feedback is reviewed before it appears publicly and does not confirm a purchase.</p>
+      {error && <Notice kind="error">{error}</Notice>}
+      <div className="business-review-actions">
+        <Button type="submit" disabled={busy}>{busy ? "Submitting feedback…" : "Submit for review"}</Button>
+        <button className="action action-soft" type="button" onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
 function ActivationDealDetail({ user }: { user: SessionUser }) {
   const { id } = useParams(),
     [deal, setDeal] = useState<Deal | null>(null),
@@ -1810,6 +2218,7 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
                 <IdentificationCard size={19} />
                 Show VIP Card
               </Link>
+              <BusinessReviewForm businessId={deal.business_id} />
             </section>
           ) : (
             <div className="flow-actions">
@@ -2315,6 +2724,40 @@ type ActivationMetric = {
   unique_educators: number
   repeat_usage: number
 }
+type ActivationAnalytics = {
+  metrics: {
+    verified_on_site_activations: number
+    unique_educators: number
+    repeat_usage: number
+    online_offer_accesses: number
+    denied_on_site_attempts: number
+  }
+  activity: ActivationMetric[]
+  filters: {
+    businesses: Array<{ id: string, name: string }>
+    locations: Array<{ id: string, business_id: string, name: string }>
+  }
+}
+type ActivationFilterState = {
+  dateFrom: string
+  dateTo: string
+  businessId: string
+  locationId: string
+}
+type AdminBusinessReview = {
+  id: string
+  business_id: string
+  business_name: string
+  first_name: string
+  last_name: string
+  rating: number
+  review_text: string
+  status: "pending" | "approved" | "rejected"
+  moderation_notes: string | null
+  created_at: string
+  activated_at: string
+  activation_type: "verified_on_site" | "online_offer_access"
+}
 type BusinessApplication = {
   id: string
   business_name: string
@@ -2329,6 +2772,35 @@ type BusinessApplication = {
   tracking_mode: string
   status: string
   locations: Array<DealLocation & { radiusMeters: number, timezone: string }>
+}
+type CreatorNetworkSubmission = {
+  id: string
+  full_name: string
+  city: string
+  educator_email: string
+  contact_information: string
+  social_handles: string
+  platforms: string[]
+  follower_range: string
+  content_niches: string[]
+  sample_content: string
+  opportunity_interests: string[]
+  contact_consent: boolean
+  status: "new" | "contacted" | "archived"
+  created_at: string
+}
+type CreatorNetworkFilters = {
+  cities: string[]
+  platforms: string[]
+  niches: string[]
+  followerRanges: string[]
+}
+type CreatorNetworkFilterState = {
+  city: string
+  platform: string
+  niche: string
+  followerRange: string
+  status: "" | "new" | "contacted" | "archived"
 }
 type DomainReview = {
   id: string
@@ -3881,12 +4353,77 @@ function AdminOperationsPage() {
       verifiedOnSiteActivations: 0,
       uniqueEducators: 0,
       repeatUsage: 0,
+      onlineOfferAccesses: 0,
+      deniedOnSiteAttempts: 0,
     }),
     [activity, setActivity] = useState<ActivationMetric[]>([]),
+    [activationFilters, setActivationFilters] = useState<ActivationFilterState>({
+      dateFrom: "",
+      dateTo: "",
+      businessId: "",
+      locationId: "",
+    }),
+    [activationFilterOptions, setActivationFilterOptions] = useState<ActivationAnalytics["filters"]>({
+      businesses: [],
+      locations: [],
+    }),
     [domains, setDomains] = useState<DomainReview[]>([]),
     [reviewNotes, setReviewNotes] = useState<Record<string, string>>({}),
+    [creatorSubmissions, setCreatorSubmissions] = useState<CreatorNetworkSubmission[]>([]),
+    [creatorFilterOptions, setCreatorFilterOptions] = useState<CreatorNetworkFilters>({
+      cities: [],
+      platforms: [],
+      niches: [],
+      followerRanges: [],
+    }),
+    [creatorFilters, setCreatorFilters] = useState<CreatorNetworkFilterState>({
+      city: "",
+      platform: "",
+      niche: "",
+      followerRange: "",
+      status: "",
+    }),
+    [creatorUpdateId, setCreatorUpdateId] = useState<string | null>(null),
+    [businessReviews, setBusinessReviews] = useState<AdminBusinessReview[]>([]),
+    [reviewFilter, setReviewFilter] = useState<"" | AdminBusinessReview["status"]>("pending"),
+    [reviewUpdateId, setReviewUpdateId] = useState<string | null>(null),
     [error, setError] = useState(""),
     [message, setMessage] = useState("")
+  const loadCreators = async (filters = creatorFilters) => {
+    const query = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) query.set(key, value)
+    })
+    const result = await api<{
+      submissions: CreatorNetworkSubmission[]
+      filters: CreatorNetworkFilters
+    }>(`/admin/creator-network${query.size ? `?${query.toString()}` : ""}`)
+    setCreatorSubmissions(result.submissions)
+    setCreatorFilterOptions(result.filters)
+  }
+  const loadActivationAnalytics = async (filters = activationFilters) => {
+    const query = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) query.set(key, value)
+    })
+    const result = await api<ActivationAnalytics>(
+      `/admin/activation-analytics${query.size ? `?${query.toString()}` : ""}`,
+    )
+    setMetrics({
+      verifiedOnSiteActivations: result.metrics.verified_on_site_activations,
+      uniqueEducators: result.metrics.unique_educators,
+      repeatUsage: result.metrics.repeat_usage,
+      onlineOfferAccesses: result.metrics.online_offer_accesses,
+      deniedOnSiteAttempts: result.metrics.denied_on_site_attempts,
+    })
+    setActivity(result.activity)
+    setActivationFilterOptions(result.filters)
+  }
+  const loadBusinessReviews = async (status = reviewFilter) => {
+    const query = status ? `?status=${encodeURIComponent(status)}` : ""
+    const result = await api<{ reviews: AdminBusinessReview[] }>(`/admin/business-reviews${query}`)
+    setBusinessReviews(result.reviews)
+  }
   const load = async () => {
     try {
       const [result, domainResult] = await Promise.all([
@@ -3901,6 +4438,7 @@ function AdminOperationsPage() {
       setMetrics((current) => ({ ...current, ...result.metrics }))
       setActivity(result.activationMetrics || [])
       setDomains(domainResult.domains)
+      await Promise.all([loadCreators(), loadActivationAnalytics(), loadBusinessReviews()])
     } catch (e) {
       setError((e as Error).message)
     }
@@ -3908,6 +4446,55 @@ function AdminOperationsPage() {
   useEffect(() => {
     void load()
   }, [])
+  const changeCreatorFilter = (
+    key: keyof CreatorNetworkFilterState,
+    value: CreatorNetworkFilterState[keyof CreatorNetworkFilterState],
+  ) => {
+    const next = { ...creatorFilters, [key]: value }
+    setCreatorFilters(next)
+    void loadCreators(next).catch((e) => setError((e as Error).message))
+  }
+  const changeActivationFilter = (
+    key: keyof ActivationFilterState,
+    value: string,
+  ) => {
+    const next = { ...activationFilters, [key]: value }
+    if (key === "businessId") next.locationId = ""
+    setActivationFilters(next)
+    void loadActivationAnalytics(next).catch((e) => setError((e as Error).message))
+  }
+  const updateCreatorStatus = async (
+    submission: CreatorNetworkSubmission,
+    status: CreatorNetworkSubmission["status"],
+  ) => {
+    setCreatorUpdateId(submission.id)
+    setError("")
+    try {
+      await patch(`/admin/creator-network/${submission.id}`, { status })
+      setMessage(`Creator submission marked ${status.replace(/_/g, " ")}.`)
+      await loadCreators()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setCreatorUpdateId(null)
+    }
+  }
+  const updateBusinessReview = async (
+    review: AdminBusinessReview,
+    status: "approved" | "rejected",
+  ) => {
+    setReviewUpdateId(review.id)
+    setError("")
+    try {
+      await patch(`/admin/business-reviews/${review.id}`, { status })
+      setMessage(`Business feedback ${status}.`)
+      await loadBusinessReviews()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setReviewUpdateId(null)
+    }
+  }
   const reviewVerification = async (
     item: VerificationCase,
     action: "approve" | "reject" | "request_information",
@@ -3952,6 +4539,39 @@ function AdminOperationsPage() {
         </div>
         {error && <Notice kind="error">{error}</Notice>}
         {message && <Notice kind="success">{message}</Notice>}
+        <section className="admin-card activation-analytics-card">
+          <div className="admin-card-heading">
+            <MapPin size={22} />
+            <div>
+              <h2>Activation reporting filters</h2>
+              <p>Filter verified on-site activations by date, business, and location. Online accesses and denied attempts remain separate.</p>
+            </div>
+          </div>
+          <div className="activation-analytics-filters">
+            <label className="field">
+              <span>From</span>
+              <input type="date" value={activationFilters.dateFrom} onChange={(event) => changeActivationFilter("dateFrom", event.target.value)} />
+            </label>
+            <label className="field">
+              <span>To</span>
+              <input type="date" value={activationFilters.dateTo} onChange={(event) => changeActivationFilter("dateTo", event.target.value)} />
+            </label>
+            <label className="field">
+              <span>Business</span>
+              <select value={activationFilters.businessId} onChange={(event) => changeActivationFilter("businessId", event.target.value)}>
+                <option value="">All businesses</option>
+                {activationFilterOptions.businesses.map((business) => <option key={business.id} value={business.id}>{business.name}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Location</span>
+              <select value={activationFilters.locationId} onChange={(event) => changeActivationFilter("locationId", event.target.value)}>
+                <option value="">All locations</option>
+                {activationFilterOptions.locations.filter((location) => !activationFilters.businessId || location.business_id === activationFilters.businessId).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+              </select>
+            </label>
+          </div>
+        </section>
         <section className="stats">
           <div>
             <strong>{metrics.verifiedOnSiteActivations}</strong>
@@ -3964,6 +4584,14 @@ function AdminOperationsPage() {
           <div>
             <strong>{metrics.repeatUsage}</strong>
             <span>REPEAT USAGE</span>
+          </div>
+          <div>
+            <strong>{metrics.onlineOfferAccesses}</strong>
+            <span>ONLINE OFFER ACCESSES</span>
+          </div>
+          <div>
+            <strong>{metrics.deniedOnSiteAttempts}</strong>
+            <span>DENIED ON-SITE ATTEMPTS</span>
           </div>
         </section>
         <section className="admin-card admin-table-card">
@@ -4068,7 +4696,9 @@ function AdminOperationsPage() {
             <div>
               <h2>Activity by business and location</h2>
               <p>
-                Only successful in-person proximity checks feed these metrics.
+                Successful in-person proximity checks only. Repeat usage is every
+                successful activation after an educator’s first at that business
+                and location in the selected period.
               </p>
             </div>
           </div>
@@ -4092,6 +4722,133 @@ function AdminOperationsPage() {
               <p className="admin-empty">
                 No verified on-site activations yet.
               </p>
+            )}
+          </div>
+        </section>
+        <section className="admin-card admin-table-card">
+          <div className="admin-card-heading">
+            <Star size={22} weight="fill" />
+            <div>
+              <h2>Business review moderation</h2>
+              <p>Feedback follows a successful offer activation, is reviewed before public display, and never confirms a purchase.</p>
+            </div>
+            <select className="admin-heading-filter" value={reviewFilter} onChange={(event) => {
+              const status = event.target.value as "" | AdminBusinessReview["status"]
+              setReviewFilter(status)
+              void loadBusinessReviews(status).catch((e) => setError((e as Error).message))
+            }}>
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+          <div className="business-review-admin-list">
+            {businessReviews.map((review) => (
+              <article className="business-review-admin" key={review.id}>
+                <div>
+                  <strong>{review.business_name}</strong>
+                  <span>{review.first_name} {review.last_name} · {review.rating}/5 · {review.activation_type === "verified_on_site" ? "verified on-site activation" : "online offer access"}</span>
+                  <p>{review.review_text}</p>
+                </div>
+                <span className={`creator-status creator-status-${review.status === "pending" ? "new" : review.status === "approved" ? "contacted" : "archived"}`}>{review.status}</span>
+                {review.status === "pending" && (
+                  <div className="admin-review-actions">
+                    <button className="action action-gold" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "approved")}>Approve</button>
+                    <button className="action action-danger" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "rejected")}>Reject</button>
+                  </div>
+                )}
+              </article>
+            ))}
+            {!businessReviews.length && <p className="admin-empty">No business feedback matches this status.</p>}
+          </div>
+        </section>
+        <section className="admin-card admin-table-card creator-admin-card">
+          <div className="admin-card-heading">
+            <UserCircle size={22} />
+            <div>
+              <h2>Teacher Creator Network</h2>
+              <p>
+                Private interest submissions only. This does not create a
+                business campaign or creator commitment.
+              </p>
+            </div>
+          </div>
+          <div className="creator-admin-filters" aria-label="Filter creator submissions">
+            <label className="field">
+              <span>City</span>
+              <select value={creatorFilters.city} onChange={(event) => changeCreatorFilter("city", event.target.value)}>
+                <option value="">All cities</option>
+                {creatorFilterOptions.cities.map((city) => <option key={city} value={city}>{city}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Platform</span>
+              <select value={creatorFilters.platform} onChange={(event) => changeCreatorFilter("platform", event.target.value)}>
+                <option value="">All platforms</option>
+                {creatorFilterOptions.platforms.map((platform) => <option key={platform} value={platform}>{platform}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Niche</span>
+              <select value={creatorFilters.niche} onChange={(event) => changeCreatorFilter("niche", event.target.value)}>
+                <option value="">All niches</option>
+                {creatorFilterOptions.niches.map((niche) => <option key={niche} value={niche}>{niche}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Audience size</span>
+              <select value={creatorFilters.followerRange} onChange={(event) => changeCreatorFilter("followerRange", event.target.value)}>
+                <option value="">All audience sizes</option>
+                {creatorFilterOptions.followerRanges.map((range) => <option key={range} value={range}>{range}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Status</span>
+              <select value={creatorFilters.status} onChange={(event) => changeCreatorFilter("status", event.target.value as CreatorNetworkFilterState["status"])}>
+                <option value="">All statuses</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+          </div>
+          <div className="creator-submission-list">
+            {creatorSubmissions.map((submission) => (
+              <article className="creator-submission" key={submission.id}>
+                <div className="creator-submission-heading">
+                  <div>
+                    <strong>{submission.full_name}</strong>
+                    <span>{submission.city} · {submission.educator_email}</span>
+                  </div>
+                  <span className={`creator-status creator-status-${submission.status}`}>{submission.status}</span>
+                </div>
+                <dl>
+                  <div><dt>Contact</dt><dd>{submission.contact_information}</dd></div>
+                  <div><dt>Platforms</dt><dd>{submission.platforms.join(" · ")}</dd></div>
+                  <div><dt>Audience</dt><dd>{submission.follower_range}</dd></div>
+                  <div><dt>Niches</dt><dd>{submission.content_niches.join(" · ")}</dd></div>
+                  <div><dt>Social handles</dt><dd>{submission.social_handles}</dd></div>
+                  <div><dt>Interested in</dt><dd>{submission.opportunity_interests.join(" · ")}</dd></div>
+                  <div className="creator-sample"><dt>Sample content</dt><dd>{submission.sample_content}</dd></div>
+                </dl>
+                <div className="creator-submission-actions">
+                  <small>Submitted {new Date(submission.created_at).toLocaleDateString()}</small>
+                  <select
+                    aria-label={`Status for ${submission.full_name}`}
+                    value={submission.status}
+                    disabled={creatorUpdateId === submission.id}
+                    onChange={(event) => void updateCreatorStatus(submission, event.target.value as CreatorNetworkSubmission["status"])}
+                  >
+                    <option value="new">New</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+              </article>
+            ))}
+            {!creatorSubmissions.length && (
+              <p className="admin-empty">No Creator Network submissions match these filters.</p>
             )}
           </div>
         </section>
@@ -4155,6 +4912,7 @@ function AppRoutes() {
           element={<ActivationProfilePage onSignOut={signOut} />}
         />
         <Route path="/support" element={<ActivationSupport />} />
+        <Route path="/creator-network" element={<CreatorNetworkPage user={user} />} />
         <Route path="/partner" element={<StructuredPartner />} />
         <Route
           path="/admin"
@@ -4173,6 +4931,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<PublicHome />} />
       <Route path="/partner" element={<PublicPartner />} />
+      <Route path="/creator-network" element={<CreatorNetworkPage />} />
       <Route path="/verify" element={<PublicVerify />} />
       <Route path="/create-account" element={<Register refresh={refresh} />} />
       <Route
