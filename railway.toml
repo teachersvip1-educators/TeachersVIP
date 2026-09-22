@@ -4,7 +4,7 @@ buildCommand = "pnpm install --frozen-lockfile && pnpm build"
 
 [deploy]
 preDeployCommand = "pnpm db:migrate && pnpm db:seed"
-startCommand = "pnpm db:migrate && pnpm db:seed && NODE_ENV=production pnpm start"
+startCommand = "NODE_ENV=production pnpm start"
 healthcheckPath = "/health/ready"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

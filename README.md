@@ -98,7 +98,7 @@ Run `pnpm locations:purge` at least daily from a Railway cron service or equival
 
 ## Railway
 
-Use separate staging and production environments and databases. Configure every required value in `.env.example`, enable PostgreSQL backups, test a restore, run the official data imports, review educator domains, and validate Pass2U on devices before launch. `railway.toml` builds the client, applies migrations and seed upserts, starts Fastify, and checks `/health/ready`.
+Use separate staging and production environments and databases. Configure every required value in `.env.example`, enable PostgreSQL backups, test a restore, run the official data imports, review educator domains, and validate Pass2U on devices before launch. `railway.toml` applies migrations and seed upserts once in the pre-deploy phase, starts Fastify as the web process, and checks `/health/ready`.
 
 Before production launch, apply every pending migration, configure `RESEND_API_KEY` and `RESEND_FROM_EMAIL`, and verify the Creator Network confirmation email on a real mailbox. Test one on-site activation over HTTPS with a physical device at an approved location, one outside-radius denial, an online offer access, review moderation, and filtered dashboard totals. Browser geolocation and the local test build cannot prove the device, HTTPS permission, mail-delivery, or production-database portions of that checklist.
 
