@@ -39,7 +39,7 @@ export async function seed() {
   try {
     for (const row of businesses) {
       await pool.query(`INSERT INTO businesses(id,name,category,description,image_url,website_url,distance,hours,is_open,address,latitude,longitude)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, image_url=EXCLUDED.image_url, address=EXCLUDED.address, latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude`, row)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, image_url=EXCLUDED.image_url, distance=EXCLUDED.distance, address=EXCLUDED.address, latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude`, row)
       if (row[9] && row[10] != null && row[11] != null) await pool.query(`INSERT INTO business_locations(id,business_id,location_name,address,city,timezone,latitude,longitude,geofence_radius_m,active)
         VALUES($1,$2,$3,$4,$5,'America/Chicago',$6,$7,150,true)
         ON CONFLICT (id) DO UPDATE SET location_name=EXCLUDED.location_name,address=EXCLUDED.address,city=COALESCE(business_locations.city,EXCLUDED.city),latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,active=true,updated_at=now()`, [`${row[0]}:primary`, row[0], geolocationTestLocationNames[String(row[0])] ?? 'Primary location', row[9], String(row[6]).split(',')[0]!.trim(), row[10], row[11]])

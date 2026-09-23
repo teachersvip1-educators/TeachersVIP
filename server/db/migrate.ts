@@ -3,11 +3,23 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getConfig } from '../config.js'
 import { createPool } from './pool.js'
+import type { DbPool } from './pool.js'
+
+const directory = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations')
+const migrationFiles = async () => (await readdir(directory)).filter(file => file.endsWith('.sql')).sort()
+
+export async function hasPendingMigrations(db: DbPool) {
+  const files = await migrationFiles()
+  const registry = await db.query<{ exists: string | null }>("SELECT to_regclass('public.schema_migrations') AS exists")
+  if (!registry.rows[0]?.exists) return true
+  const applied = await db.query<{ name: string }>('SELECT name FROM schema_migrations')
+  const names = new Set(applied.rows.map(row => row.name))
+  return files.some(file => !names.has(file))
+}
 
 export async function migrate() {
   const pool = createPool(getConfig())
-  const directory = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations')
-  const files = (await readdir(directory)).filter(file => file.endsWith('.sql')).sort()
+  const files = await migrationFiles()
   const client = await pool.connect()
   let locked = false
   try {
