@@ -227,21 +227,24 @@ function PublicHome() {
           </p>
         </div>
         <div className="about-pillars">
-          <article>
+          <Link className="about-pillar" to="/create-account" aria-label="Educator Membership: explore exclusive educator offers">
             <span>01</span>
             <h3>Educator Membership</h3>
             <p>Verified educators discover exclusive local and online offers.</p>
-          </article>
-          <article>
+            <span className="about-pillar-action">Explore educator offers <ArrowRight size={15} /></span>
+          </Link>
+          <Link className="about-pillar" to="/partner" aria-label="Business Partnerships: learn about partnering with TeachersVIP">
             <span>02</span>
             <h3>Business Partnerships</h3>
             <p>Businesses reach educators through offers, marketing campaigns, events, sponsorships, and community initiatives.</p>
-          </article>
-          <article>
+            <span className="about-pillar-action">Partner with us <ArrowRight size={15} /></span>
+          </Link>
+          <Link className="about-pillar" to="/creator-network" aria-label="Teacher Creator Network: join the creator interest form">
             <span>03</span>
             <h3>Teacher Creator Network</h3>
             <p>Teacher creators connect with businesses for paid content, reviews, promotions, and campaign opportunities.</p>
-          </article>
+            <span className="about-pillar-action">Join the network <ArrowRight size={15} /></span>
+          </Link>
         </div>
       </section>
       <PublicBusinessReviews />
