@@ -547,7 +547,10 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   app.get("/health/live", async () => ({ status: "ok" }))
   app.get("/health/ready", async (_request, reply) => {
     try {
-      await db.query("SELECT 1")
+      const schema = await db.query<{ ready: boolean }>(
+        "SELECT to_regclass('public.city_deal_alerts') IS NOT NULL AND to_regclass('public.business_review_comments') IS NOT NULL AS ready",
+      )
+      if (!schema.rows[0]?.ready) throw new Error('Launch schema is unavailable')
       return { status: "ready" }
     } catch {
       return reply.code(503).send({ status: "not_ready" })

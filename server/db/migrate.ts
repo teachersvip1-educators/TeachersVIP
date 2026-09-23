@@ -9,7 +9,10 @@ export async function migrate() {
   const directory = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations')
   const files = (await readdir(directory)).filter(file => file.endsWith('.sql')).sort()
   const client = await pool.connect()
+  let locked = false
   try {
+    await client.query('SELECT pg_advisory_lock(900017, 1)')
+    locked = true
     await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())')
     for (const file of files) {
       const exists = await client.query('SELECT 1 FROM schema_migrations WHERE name = $1', [file])
@@ -23,12 +26,15 @@ export async function migrate() {
     await client.query('ROLLBACK')
     throw error
   } finally {
-    client.release()
-    await pool.end()
+    try {
+      if (locked) await client.query('SELECT pg_advisory_unlock(900017, 1)')
+    } finally {
+      client.release()
+      await pool.end()
+    }
   }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   migrate().then(() => console.log('Database migrations complete.')).catch(error => { console.error(error); process.exit(1) })
 }
-

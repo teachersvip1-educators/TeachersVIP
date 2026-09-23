@@ -42,6 +42,13 @@ describe('production request origin protection', () => {
     expect(response.headers['content-security-policy']).toContain("img-src 'self' data: https://images.unsplash.com")
   })
 
+  it('does not report readiness when the launch tables are missing', async () => {
+    const db = { query: vi.fn().mockResolvedValue({ rows: [{ ready: false }] }) } as unknown as DbPool
+    app = buildApp({ config, db })
+    const response = await app.inject({ method: 'GET', url: '/health/ready' })
+    expect(response.statusCode).toBe(503)
+  })
+
   it('accepts the public same-origin host forwarded by Railway', async () => {
     const response = await createApp().inject({
       method: 'POST',
