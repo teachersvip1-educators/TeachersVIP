@@ -106,9 +106,11 @@ suite('TeachersVIP educator verification and activation API', () => {
     expect(memberCreator.statusCode).toBe(201)
     expect(memberCreator.json()).toMatchObject({ accepted: true, emailVerificationRequired: false })
 
+    const unrelatedOfferReview = await app.inject({ method: 'POST', url: '/api/businesses/teacher-tech/reviews', headers: { cookie }, payload: { rating: 5, reviewText: 'This should need its own offer activation.', dealId: 'teacher-tech-giveaway' } })
+    expect(unrelatedOfferReview.statusCode).toBe(403)
     const submittedReview = await app.inject({
       method: 'POST', url: '/api/businesses/teacher-tech/reviews', headers: { cookie },
-      payload: { rating: 5, reviewText: 'The redemption instructions were clear and easy to use.' },
+      payload: { rating: 5, reviewText: 'The redemption instructions were clear and easy to use.', dealId: 'teacher-tech-25' },
     })
     expect(submittedReview.statusCode).toBe(201)
     const hiddenReviews = await app.inject({ method: 'GET', url: '/api/business-reviews' })

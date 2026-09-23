@@ -4,9 +4,9 @@ import { encrypt } from '../security.js'
 
 
 const businesses: Array<Array<string | number | boolean | null>> = [
-  ['island-spice', 'Ember & Oak', 'Dining', 'A warm, wood-fired kitchen serving generous plates, bright flavours, and an educator-friendly welcome.', '/Ember&Oak.jpeg', 'https://example.com', 'Houston, TX', 'Open now · Closes 9 PM.', true, 'Houston, Texas', 29.7604, -95.3698],
+  ['island-spice', 'Ember & Oak', 'Dining', 'A warm, wood-fired kitchen serving generous plates, bright flavours, and an educator-friendly welcome.', '/Ember&Oak.jpeg', 'https://example.com', 'Humble, TX', 'Open now · Closes 9 PM.', true, '9522 N Sam Houston Pkwy E, Ste 2600, Humble, TX 77396', 29.934147087549, -95.248639723487],
   ['glow-beauty', 'Luxe Theory', 'Services', 'A considered salon experience for hair, colour, and skincare appointments.', '/LuxeTheory.jpeg', 'https://example.com', 'Dallas, TX', 'Open now · Closes 7 PM.', true, 'Dallas, Texas', 32.7767, -96.797],
-  ['cafe-101', 'Golden Hour Coffee', 'Coffee', 'A neighbourhood coffee stop for smooth espresso, iced drinks, and a slow start to the day.', '/GoldenHourCoffee.jpeg', 'https://example.com', 'Houston, TX', 'Open now · Closes 6 PM.', true, 'Houston, Texas', 29.7604, -95.3698],
+  ['cafe-101', 'Golden Hour Coffee', 'Coffee', 'A neighbourhood coffee stop for smooth espresso, iced drinks, and a slow start to the day.', '/GoldenHourCoffee.jpeg', 'https://example.com', 'Humble, TX', 'Open now · Closes 6 PM.', true, '8000 North Sam Houston Pkwy E, Humble, TX 77396', 29.937970462236, -95.268344211531],
   ['booknook', 'The Teacher Edit', 'Retail', 'A thoughtful collection of books, teacher gifts, and classroom essentials for the everyday educator.', '/The Teacher Edit.jpeg', 'https://example.com', 'Dallas, TX', 'Open now · Closes 8 PM.', true, 'Dallas, Texas', 32.7767, -96.797],
   ['teacher-tech', 'Sunday Supply', 'Online', 'Practical digital classroom tools and educator resources designed to make teaching days run more smoothly.', '/SundaySupply.jpeg', 'https://example.com', null, null, null, null, null, null],
   ['district-social', 'District Social', 'Dining', 'A relaxed neighbourhood social space for good food, easy conversation, and time well spent.', '/DistrictSocial.jpeg', 'https://example.com', 'Austin, TX', 'Open now · Closes 10 PM.', true, 'Austin, Texas', 30.2672, -97.7431],
@@ -28,6 +28,11 @@ const deals: Array<Array<string | number | boolean | null>> = [
   ['vibes-juice-co-perk', 'vibes-juice-co', '15% OFF Any Order', 'Save 15% on any eligible order.', 'in_person', 'Dining', 'Valid on eligible menu purchases.', null, 300, false, false, false, null, 'none'],
 ]
 
+const geolocationTestLocationNames: Record<string, string> = {
+  'island-spice': 'Geolocation test site · Suite 2600',
+  'cafe-101': 'Geolocation test site · North Sam Houston',
+}
+
 export async function seed() {
   const config = getConfig()
   const pool = createPool(config)
@@ -36,8 +41,8 @@ export async function seed() {
       await pool.query(`INSERT INTO businesses(id,name,category,description,image_url,website_url,distance,hours,is_open,address,latitude,longitude)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, image_url=EXCLUDED.image_url, address=EXCLUDED.address, latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude`, row)
       if (row[9] && row[10] != null && row[11] != null) await pool.query(`INSERT INTO business_locations(id,business_id,location_name,address,timezone,latitude,longitude,geofence_radius_m,active)
-        VALUES($1,$2,'Primary location',$3,'America/Chicago',$4,$5,150,true)
-        ON CONFLICT (id) DO UPDATE SET address=EXCLUDED.address,latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,active=true,updated_at=now()`, [`${row[0]}:primary`, row[0], row[9], row[10], row[11]])
+        VALUES($1,$2,$3,$4,'America/Chicago',$5,$6,150,true)
+        ON CONFLICT (id) DO UPDATE SET location_name=EXCLUDED.location_name,address=EXCLUDED.address,latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,active=true,updated_at=now()`, [`${row[0]}:primary`, row[0], geolocationTestLocationNames[String(row[0])] ?? 'Primary location', row[9], row[10], row[11]])
     }
     for (const original of deals) {
       const row = [...original]

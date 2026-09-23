@@ -238,6 +238,34 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return user
   }
 
+  const sendCityDealAlerts = async (dealId: string) => {
+    if (!resend || !config.MARKETING_POSTAL_ADDRESS) return
+    const recipients = await db.query<{ user_id: string, email: string, city: string, title: string, unsubscribe_token: string }>(
+      `SELECT DISTINCT a.user_id,a.email,a.city,a.unsubscribe_token,d.title FROM city_deal_alerts a
+       JOIN deals d ON d.id=$1 AND d.published AND d.channel='in_person'
+       JOIN businesses b ON b.id=d.business_id AND b.published
+       JOIN deal_locations dl ON dl.deal_id=d.id
+       JOIN business_locations l ON l.id=dl.business_location_id AND l.active
+       WHERE a.active AND (lower(l.city)=lower(a.city) OR position(', ' || lower(a.city) || ',' in lower(l.address))>0)
+         AND NOT EXISTS (SELECT 1 FROM city_deal_alert_deliveries x WHERE x.user_id=a.user_id AND x.deal_id=d.id)`,
+      [dealId],
+    )
+    for (const recipient of recipients.rows) {
+      try {
+        const sent = await resend.emails.send({
+          from: config.RESEND_FROM_EMAIL,
+          to: recipient.email,
+          subject: `A TeachersVIP deal arrived in ${recipient.city}`,
+          text: `Promotional email from TeachersVIP.\n\n${recipient.title} is now available in ${recipient.city}. View it at ${config.APP_URL}/deals/${encodeURIComponent(dealId)}.\n\nStop city alerts: ${config.APP_URL}/unsubscribe?token=${recipient.unsubscribe_token}\n\nTeachersVIP · ${config.MARKETING_POSTAL_ADDRESS}`,
+        })
+        if (sent.error) throw sent.error
+        await db.query('INSERT INTO city_deal_alert_deliveries(user_id,deal_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [recipient.user_id, dealId])
+      } catch (error) {
+        app.log.error({ error, dealId, userId: recipient.user_id }, 'City deal alert delivery failed')
+      }
+    }
+  }
+
   async function createSession(reply: any, userId: string) {
     const token = randomToken()
     await db.query(
@@ -1719,6 +1747,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         ],
       )
       await client.query("COMMIT")
+      if (body.publish && body.dealId) await sendCityDealAlerts(body.dealId).catch(error => app.log.error({ error }, 'City alert delivery failed'))
       return {
         ok: true,
         status: "approved",
@@ -2055,6 +2084,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     } finally {
       client.release()
     }
+    await sendCityDealAlerts(body.id).catch(error => app.log.error({ error }, 'City alert delivery failed'))
     return { ok: true }
   })
 
@@ -2137,6 +2167,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
               : value,
           ] as const,
       )
+    const priorPublication = await db.query<{ published: boolean }>('SELECT published FROM deals WHERE id=$1', [id])
     await db.query(
       `UPDATE deals SET ${fields.map(([field], index) => `${mappings[field]}=$${index + 1}`).join(",")} WHERE id=$${fields.length + 1}`,
       [...fields.map(([, value]) => value), id],
@@ -2150,6 +2181,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         JSON.stringify(Object.fromEntries(fields)),
       ],
     )
+    if (body.published === true && priorPublication.rows[0]?.published === false)
+      await sendCityDealAlerts(id).catch(error => app.log.error({ error }, 'City alert delivery failed'))
     return { ok: true }
   })
 
@@ -2785,7 +2818,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       review_text: string
       created_at: string
     }>(
-      `SELECT r.id,r.business_id,b.name AS business_name,r.rating,r.review_text,r.created_at
+      `SELECT r.id,r.business_id,b.name AS business_name,r.rating,r.review_text,r.created_at,
+        COALESCE((SELECT json_agg(json_build_object('id',c.id,'body',c.body,'created_at',c.created_at,'author',u.first_name) ORDER BY c.created_at)
+          FROM business_review_comments c JOIN users u ON u.id=c.user_id WHERE c.review_id=r.id AND c.status='approved'),'[]'::json) comments
        FROM business_reviews r JOIN businesses b ON b.id=r.business_id
        WHERE r.status='approved' AND b.published
        ORDER BY r.created_at DESC LIMIT 6`,
@@ -2809,7 +2844,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       review_text: string
       created_at: string
     }>(
-      `SELECT r.id,r.business_id,b.name AS business_name,r.rating,r.review_text,r.created_at
+      `SELECT r.id,r.business_id,b.name AS business_name,r.rating,r.review_text,r.created_at,
+        COALESCE((SELECT json_agg(json_build_object('id',c.id,'body',c.body,'created_at',c.created_at,'author',u.first_name) ORDER BY c.created_at)
+          FROM business_review_comments c JOIN users u ON u.id=c.user_id WHERE c.review_id=r.id AND c.status='approved'),'[]'::json) comments
        FROM business_reviews r JOIN businesses b ON b.id=r.business_id
        WHERE r.business_id=$1 AND r.status='approved' AND b.published
        ORDER BY r.created_at DESC LIMIT 100`,
@@ -2825,6 +2862,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       z.object({
         rating: z.coerce.number().int().min(1).max(5),
         reviewText: z.string().trim().min(10).max(1500),
+        dealId: z.string().trim().min(1).max(160),
       }),
       request.body,
     )
@@ -2836,14 +2874,14 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       throw Object.assign(new Error("Business not found."), { statusCode: 404 })
     const activation = await db.query<{ id: string }>(
       `SELECT id FROM deal_activations
-       WHERE user_id=$1 AND business_id=$2 AND outcome='successful'
+       WHERE user_id=$1 AND business_id=$2 AND deal_id=$3 AND outcome='successful'
          AND activation_type IN ('verified_on_site','online_offer_access')
        ORDER BY created_at DESC LIMIT 1`,
-      [user.id, businessId],
+      [user.id, businessId, body.dealId],
     )
     if (!activation.rows[0])
       throw Object.assign(
-        new Error("Activate one of this business’s offers before sharing feedback."),
+        new Error("Activate this offer before sharing feedback."),
         { statusCode: 403 },
       )
     const saved = await db.query<{ id: string }>(
@@ -2992,6 +3030,126 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       return reply.code(201).send({ ok: true, applicationId })
     },
   )
+
+  app.post('/api/contact', { config: { rateLimit: { max: 3, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const body = parse(z.object({ name: z.string().trim().min(2).max(140), email: z.email(), message: z.string().trim().min(10).max(2000) }), request.body)
+    await db.query('INSERT INTO contact_messages(id,name,email,message) VALUES($1,$2,$3,$4)', [randomUUID(),body.name,body.email,body.message])
+    return reply.code(201).send({ ok: true })
+  })
+
+  app.post('/api/business-reviews/:id/comments', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const user = requireVerified(request)
+    const { id } = parse(z.object({ id: z.string().uuid() }), request.params)
+    const body = parse(z.object({ body: z.string().trim().min(2).max(1000) }), request.body)
+    const review = await db.query('SELECT id FROM business_reviews WHERE id=$1 AND status=$2', [id,'approved'])
+    if (!review.rows.length) throw Object.assign(new Error('Review not found.'), { statusCode: 404 })
+    await db.query('INSERT INTO business_review_comments(id,review_id,user_id,body) VALUES($1,$2,$3,$4)', [randomUUID(),id,user.id,body.body])
+    return reply.code(201).send({ ok: true })
+  })
+
+  app.get('/api/me/city-alert', async (request) => {
+    const user = requireVerified(request)
+    const result = await db.query('SELECT city,email,active FROM city_deal_alerts WHERE user_id=$1', [user.id])
+    return { alert: result.rows[0] ?? null }
+  })
+
+  app.put('/api/me/city-alert', async (request) => {
+    const user = requireVerified(request)
+    const body = parse(z.object({ city: z.string().trim().min(2).max(120), active: z.boolean() }), request.body)
+    await db.query(`INSERT INTO city_deal_alerts(user_id,city,email,active,unsubscribe_token) VALUES($1,$2,$3,$4,$5)
+      ON CONFLICT(user_id) DO UPDATE SET city=EXCLUDED.city,email=EXCLUDED.email,active=EXCLUDED.active,updated_at=now()`,
+      [user.id, body.city, user.personal_email, body.active, randomUUID()])
+    return { ok: true, deliveryReady: Boolean(resend && config.MARKETING_POSTAL_ADDRESS) }
+  })
+
+  app.post('/api/city-alerts/unsubscribe', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (request) => {
+    const { token } = parse(z.object({ token: z.string().uuid() }), request.body)
+    await db.query('UPDATE city_deal_alerts SET active=false,updated_at=now() WHERE unsubscribe_token=$1', [token])
+    return { ok: true }
+  })
+
+  app.post('/api/business-suggestions', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const user = requireVerified(request)
+    const body = parse(z.object({ businessName: z.string().trim().min(2).max(140), city: z.string().trim().min(2).max(120), locationHint: z.string().trim().max(300).optional(), reason: z.string().trim().max(1000).optional() }), request.body)
+    const id = randomUUID()
+    await db.query('INSERT INTO business_suggestions(id,user_id,business_name,city,location_hint,reason) VALUES($1,$2,$3,$4,$5,$6)', [id,user.id,body.businessName,body.city,body.locationHint || null,body.reason || null])
+    return reply.code(201).send({ ok: true, id })
+  })
+
+  app.post('/api/deals/:id/issue-reports', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const user = requireVerified(request)
+    const { id: dealId } = parse(z.object({ id: z.string().min(1).max(160) }), request.params)
+    const body = parse(z.object({ reason: z.enum(['expired','not_honored','incorrect_information']), details: z.string().trim().max(1500).optional() }), request.body)
+    const deal = await db.query('SELECT id FROM deals WHERE id=$1 AND published', [dealId])
+    if (!deal.rows.length) throw Object.assign(new Error('Offer not found.'), { statusCode: 404 })
+    const id = randomUUID()
+    await db.query('INSERT INTO offer_reports(id,user_id,deal_id,reason,details) VALUES($1,$2,$3,$4,$5)', [id,user.id,dealId,body.reason,body.details || null])
+    return reply.code(201).send({ ok: true, id })
+  })
+
+  app.post('/api/business-reviews/:id/reports', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const user = requireVerified(request)
+    const { id: reviewId } = parse(z.object({ id: z.string().uuid() }), request.params)
+    const body = parse(z.object({ reason: z.enum(['spam','abusive','inaccurate','other']), details: z.string().trim().max(1500).optional() }), request.body)
+    const review = await db.query('SELECT id FROM business_reviews WHERE id=$1 AND status=$2', [reviewId,'approved'])
+    if (!review.rows.length) throw Object.assign(new Error('Review not found.'), { statusCode: 404 })
+    const id = randomUUID()
+    await db.query(`INSERT INTO business_review_reports(id,review_id,user_id,reason,details) VALUES($1,$2,$3,$4,$5)
+      ON CONFLICT(review_id,user_id) DO UPDATE SET reason=EXCLUDED.reason,details=EXCLUDED.details,status='open',updated_at=now()`, [id,reviewId,user.id,body.reason,body.details || null])
+    return reply.code(201).send({ ok: true })
+  })
+
+  app.get('/api/admin/launch-feedback', async (request) => {
+    requireSuperadmin(request)
+    const [suggestions, offers, reviews, comments, contacts] = await Promise.all([
+      db.query(`SELECT s.id,s.business_name,s.city,s.location_hint,s.reason,s.status,s.created_at,u.personal_email AS educator_email FROM business_suggestions s JOIN users u ON u.id=s.user_id ORDER BY s.created_at DESC LIMIT 200`),
+      db.query(`SELECT r.id,r.deal_id,d.title,r.reason,r.details,r.status,r.created_at FROM offer_reports r JOIN deals d ON d.id=r.deal_id ORDER BY r.created_at DESC LIMIT 200`),
+      db.query(`SELECT f.id,f.review_id,b.name AS business_name,r.review_text,f.reason,f.details,f.status,f.created_at FROM business_review_reports f JOIN business_reviews r ON r.id=f.review_id JOIN businesses b ON b.id=r.business_id ORDER BY f.created_at DESC LIMIT 200`),
+      db.query(`SELECT c.id,c.review_id,c.body,c.status,c.created_at FROM business_review_comments c ORDER BY c.created_at DESC LIMIT 200`),
+      db.query(`SELECT id,name,email,message,created_at FROM contact_messages ORDER BY created_at DESC LIMIT 200`),
+    ])
+    return { suggestions: suggestions.rows, offerReports: offers.rows, reviewReports: reviews.rows, comments: comments.rows, contacts: contacts.rows }
+  })
+
+  app.patch('/api/admin/review-comments/:id', async (request) => {
+    const admin = requireSuperadmin(request)
+    const { id } = parse(z.object({ id: z.string().uuid() }), request.params)
+    const { status } = parse(z.object({ status: z.enum(['approved','rejected']) }), request.body)
+    const result = await db.query('UPDATE business_review_comments SET status=$1 WHERE id=$2 RETURNING id', [status,id])
+    if (!result.rows.length) throw Object.assign(new Error('Comment not found.'), { statusCode: 404 })
+    await db.query(`INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'updated','review_comment',$3,$4)`, [randomUUID(),admin.id,id,JSON.stringify({ status })])
+    return { ok: true }
+  })
+
+  app.patch('/api/admin/launch-feedback/:kind/:id', async (request) => {
+    const admin = requireSuperadmin(request)
+    const { kind, id } = parse(z.object({ kind: z.enum(['suggestion','offer','review']), id: z.string().uuid() }), request.params)
+    const status = parse(z.object({ status: z.enum(['new','contacted','archived','open','resolved','dismissed']) }), request.body).status
+    const table = kind === 'suggestion' ? 'business_suggestions' : kind === 'offer' ? 'offer_reports' : 'business_review_reports'
+    const allowed = kind === 'suggestion' ? ['new','contacted','archived'] : ['open','resolved','dismissed']
+    if (!allowed.includes(status)) throw Object.assign(new Error('Invalid status.'), { statusCode: 400 })
+    const result = await db.query(`UPDATE ${table} SET status=$1,updated_at=now() WHERE id=$2 RETURNING id`, [status,id])
+    if (!result.rows.length) throw Object.assign(new Error('Report not found.'), { statusCode: 404 })
+    await db.query(`INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'updated',$3,$4,$5)`, [randomUUID(),admin.id,kind,id,JSON.stringify({ status })])
+    return { ok: true }
+  })
+
+  app.get('/api/admin/launch-analytics', async (request) => {
+    requireSuperadmin(request)
+    const [totals, cities, viewed, saved] = await Promise.all([
+      db.query(`SELECT (SELECT count(*)::int FROM users) registrations,
+        (SELECT count(*)::int FROM users WHERE educator_verified_at IS NOT NULL) verified_educators,
+        (SELECT count(*)::int FROM deal_activations WHERE outcome='successful' AND activation_type='verified_on_site') verified_on_site_activations,
+        (SELECT count(*)::int FROM deal_activations WHERE outcome='successful' AND activation_type='online_offer_access') online_code_reveals,
+        (SELECT count(*)::int FROM business_reviews) reviews_submitted,
+        (SELECT count(*)::int FROM creator_network_submissions WHERE email_verified_at IS NOT NULL) creator_applications,
+        (SELECT count(*)::int FROM business_applications) business_inquiries`),
+      db.query(`SELECT city,count(*)::int signups FROM users GROUP BY city ORDER BY signups DESC LIMIT 30`),
+      db.query(`SELECT d.id,d.title,count(*)::int views FROM analytics_events a JOIN deals d ON d.id=a.deal_id WHERE a.event_type='deal_view' GROUP BY d.id,d.title ORDER BY views DESC LIMIT 10`),
+      db.query(`SELECT d.id,d.title,count(*)::int saves FROM saved_deals s JOIN deals d ON d.id=s.deal_id GROUP BY d.id,d.title ORDER BY saves DESC LIMIT 10`),
+    ])
+    return { totals: totals.rows[0], cities: cities.rows, viewed: viewed.rows, saved: saved.rows }
+  })
 
   app.setErrorHandler((error: any, _request, reply) => {
     app.log.error(error)

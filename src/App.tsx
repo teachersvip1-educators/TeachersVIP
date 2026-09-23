@@ -38,6 +38,9 @@ import {
   UserCircle,
 } from "@phosphor-icons/react"
 import { api, del, patch, post } from "./lib/api"
+import { AboutPage, AdminLaunchPanel, CityAlert, ContactPage, InformationPage, OfferReport, ReviewTools, SiteFooter, SuggestBusiness, UnsubscribePage } from './LaunchFeatures'
+import SpotlightCard from './reactbits/SpotlightCard'
+import StarBorder from './reactbits/StarBorder'
 
 type SessionUser = {
   id: string
@@ -133,6 +136,7 @@ type PublicBusinessReview = {
   rating: number
   review_text: string
   created_at: string
+  comments?: { id: string; body: string; author: string; created_at: string }[]
 }
 
 const GOLD = "#D4AF37",
@@ -248,7 +252,7 @@ function PublicHome() {
         </div>
       </section>
       <PublicBusinessReviews />
-      <section className="creator-callout" id="creator-network" aria-labelledby="creator-title">
+      <SpotlightCard className="creator-callout" ><section id="creator-network" aria-labelledby="creator-title">
         <div>
           <span className="public-eyebrow">Teacher Creator Network</span>
           <h2 id="creator-title">Are You an Educator Who Creates Content?</h2>
@@ -257,10 +261,11 @@ function PublicHome() {
             interest you. We are collecting creator interest for the network.
           </p>
         </div>
-        <Link className="public-primary" to="/creator-network">
+        <StarBorder className="public-primary" to="/creator-network">
           Join the Creator Network <ArrowRight size={18} weight="bold" />
-        </Link>
-      </section>
+        </StarBorder>
+      </section></SpotlightCard>
+      <SiteFooter />
     </main>
   )
 }
@@ -327,6 +332,7 @@ function PublicPartner() {
         </div>
       </section>
       <StructuredPartner publicView />
+      <SiteFooter />
     </div>
   )
 }
@@ -576,6 +582,7 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
           </>
         )}
       </section>
+      {!user && <SiteFooter />}
     </main>
   )
 }
@@ -1442,6 +1449,7 @@ function Shell({
           </span>
         </header>
         {children}
+        <SiteFooter />
         <nav className="mobile-nav" aria-label="Primary navigation">
           {links.map(({ to, label, Icon }) => (
             <NavLink
@@ -1514,13 +1522,6 @@ function DealCard({
     <article className={`deal-card ${deal.used ? "deal-card-used" : ""}`}>
       <Link
         to={`/deals/${deal.id}`}
-        onClick={() =>
-          void post("/analytics/events", {
-            eventType: "deal_view",
-            businessId: deal.business_id,
-            dealId: deal.id,
-          })
-        }
       >
         <div className="deal-image">
           <img
@@ -1603,7 +1604,7 @@ function DealCard({
   )
 }
 
-function Discover() {
+function Discover({ user }: { user: SessionUser }) {
   const navigate = useNavigate()
   const [deals, setDeals] = useState<Deal[]>([]),
     [q, setQ] = useState(""),
@@ -1751,6 +1752,8 @@ function Discover() {
           text="Try a different search or category."
         />
       )}
+      {!loading && !deals.some(deal => deal.channel === 'in_person' && deal.address?.toLowerCase().includes(`, ${user.city.split(',')[0].trim().toLowerCase()},`)) && <CityAlert city={user.city.split(',')[0].trim()} email={user.personal_email} />}
+      <SuggestBusiness city={user.city} />
       <NewsletterOptIn />
     </Page>
   )
@@ -1883,7 +1886,7 @@ function BarcodeDisplay({ value }: { value: string }) {
   )
 }
 
-function BusinessReviewForm({ businessId }: { businessId: string }) {
+function BusinessReviewForm({ businessId, dealId }: { businessId: string; dealId: string }) {
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [sent, setSent] = useState(false),
@@ -1897,6 +1900,7 @@ function BusinessReviewForm({ businessId }: { businessId: string }) {
       await post(`/businesses/${businessId}/reviews`, {
         rating: Number(form.get("rating")),
         reviewText: form.get("reviewText"),
+        dealId,
       })
       setSent(true)
     } catch (e) {
@@ -1932,7 +1936,7 @@ function BusinessReviewForm({ businessId }: { businessId: string }) {
         <span>Feedback</span>
         <textarea name="reviewText" required minLength={10} maxLength={1500} placeholder="Share your experience with this participating business." />
       </label>
-      <p>You must have activated an offer from this business. Feedback is reviewed before it appears publicly and does not confirm a purchase.</p>
+      <p>You must have activated this offer. Feedback is reviewed before it appears publicly and does not confirm a purchase.</p>
       {error && <Notice kind="error">{error}</Notice>}
       <div className="business-review-actions">
         <Button type="submit" disabled={busy}>{busy ? "Submitting feedback…" : "Submit for review"}</Button>
@@ -1975,6 +1979,8 @@ function BusinessReviews({ businessId, businessName }: { businessId: string, bus
               </div>
               <p>{review.review_text}</p>
               <small>{new Date(review.created_at).toLocaleDateString()}</small>
+              {review.comments?.map(comment => <p className="review-comment" key={comment.id}><strong>{comment.author}</strong> {comment.body}</p>)}
+              <ReviewTools reviewId={review.id} />
             </article>
           ))}
         </div>
@@ -2002,6 +2008,7 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
       .then((result) => {
         setDeal(result.deal)
         setLocationId(result.deal.locations?.[0]?.id || "")
+        void post('/analytics/events', { eventType: 'deal_view', businessId: result.deal.business_id, dealId: result.deal.id }).catch(() => {})
       })
       .catch((e) => setError(e.message))
   }, [id])
@@ -2228,7 +2235,7 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
           {!activation && error && <Notice kind="error">{error}</Notice>}
           {activation ? (
             <section
-              className="report-success activation-success"
+              className={`report-success activation-success${activation.activationType === "online_offer_access" ? "" : " activation-location-confirmed"}`}
               role="status"
             >
               <CheckCircle size={42} weight="fill" />
@@ -2339,9 +2346,10 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
             </div>
           )}
           {user.verified && (
-            <BusinessReviewForm businessId={deal.business_id} />
+            <BusinessReviewForm businessId={deal.business_id} dealId={deal.id} />
           )}
           <BusinessReviews businessId={deal.business_id} businessName={deal.business_name} />
+          <OfferReport dealId={deal.id} />
           {activation && error && <Notice kind="error">{error}</Notice>}
         </div>
       </section>
@@ -4833,10 +4841,10 @@ function AdminOperationsPage() {
                   <p>{review.review_text}</p>
                 </div>
                 <span className={`creator-status creator-status-${review.status === "pending" ? "new" : review.status === "approved" ? "contacted" : "archived"}`}>{review.status}</span>
-                {review.status === "pending" && (
+                {review.status !== "rejected" && (
                   <div className="admin-review-actions">
-                    <button className="action action-gold" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "approved")}>Approve</button>
-                    <button className="action action-danger" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "rejected")}>Reject</button>
+                    {review.status === "pending" && <button className="action action-gold" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "approved")}>Approve</button>}
+                    <button className="action action-danger" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "rejected")}>{review.status === "approved" ? 'Remove review' : 'Reject'}</button>
                   </div>
                 )}
               </article>
@@ -4933,6 +4941,7 @@ function AdminOperationsPage() {
             )}
           </div>
         </section>
+        <AdminLaunchPanel />
       </Page>
       <AdminPage />
     </>
@@ -4969,7 +4978,7 @@ function AppRoutes() {
         <span>Loading TeachersVIP…</span>
       </div>
     )
-  if (user && !user.verified && routeLocation.pathname !== "/verify")
+  if (user && !user.verified && !['/verify','/creator-network','/about','/contact','/support','/privacy','/terms','/unsubscribe'].includes(routeLocation.pathname))
     return <Navigate to="/verify" replace />
   return user ? (
     <Shell user={user} onSignOut={signOut}>
@@ -4978,7 +4987,7 @@ function AppRoutes() {
           path="/verify"
           element={<Verify user={user} refresh={refresh} />}
         />
-        <Route path="/deals" element={<Discover />} />
+        <Route path="/deals" element={<Discover user={user} />} />
         <Route
           path="/deals/:id"
           element={<ActivationDealDetail user={user} />}
@@ -4993,6 +5002,11 @@ function AppRoutes() {
           element={<ActivationProfilePage onSignOut={signOut} />}
         />
         <Route path="/support" element={<ActivationSupport />} />
+        <Route path="/contact" element={<ContactPage embedded />} />
+        <Route path="/about" element={<AboutPage embedded />} />
+        <Route path="/unsubscribe" element={<UnsubscribePage embedded />} />
+        <Route path="/privacy" element={<InformationPage kind="privacy" embedded />} />
+        <Route path="/terms" element={<InformationPage kind="terms" embedded />} />
         <Route path="/creator-network" element={<CreatorNetworkPage user={user} />} />
         <Route path="/partner" element={<StructuredPartner />} />
         <Route
@@ -5013,6 +5027,12 @@ function AppRoutes() {
       <Route path="/" element={<PublicHome />} />
       <Route path="/partner" element={<PublicPartner />} />
       <Route path="/creator-network" element={<CreatorNetworkPage />} />
+      <Route path="/contact" element={<ContactPage />} />
+      <Route path="/about" element={<AboutPage />} />
+      <Route path="/unsubscribe" element={<UnsubscribePage />} />
+      <Route path="/support" element={<><ActivationSupport /><SiteFooter /></>} />
+      <Route path="/privacy" element={<InformationPage kind="privacy" />} />
+      <Route path="/terms" element={<InformationPage kind="terms" />} />
       <Route path="/verify" element={<PublicVerify />} />
       <Route path="/create-account" element={<Register refresh={refresh} />} />
       <Route

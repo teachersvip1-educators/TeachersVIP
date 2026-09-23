@@ -48,7 +48,15 @@ An administrator reviews the application, supplies reviewed latitude/longitude f
 
 The Teacher Creator Network form is public: it does not require a TeachersVIP account. A public submission is held privately until the submitted educator email is confirmed through a single-use, 30-minute link. A signed-in verified member may submit with their already verified membership email without another confirmation. Only email-confirmed submissions appear in the private admin list, where city, platform, content niche, audience size, and workflow status can be filtered. Pending public submissions are throttled per email, and production fails closed rather than exposing a temporary confirmation URL when email delivery is not configured.
 
-Verified educators may leave feedback after they successfully activate an offer from a participating business. Reviews start as pending, are moderated by an administrator, and only approved feedback appears publicly. A review describes an educator’s experience with a business after offer access; it is not a completed-purchase record or a POS confirmation.
+Verified educators may leave feedback after they successfully activate the specific offer shown on the deal page. Reviews start as pending, are moderated by an administrator, and only approved feedback appears publicly. Verified members can comment on and report approved reviews; comments require approval. Administrators can remove approved reviews. A review describes an educator’s experience after offer access; it is not a completed-purchase record or a POS confirmation.
+
+## Launch feedback, alerts, and reporting
+
+Members can suggest businesses and report expired, dishonored, or incorrect offers. Reports and suggestions are available in the protected superadmin panel alongside contact messages and review reports. The launch dashboard aggregates registrations, verified educators, sign-ups by city, deal views, current saves, on-site activations, online offer accesses, reviews, confirmed creator applications, and business inquiries.
+
+When a member has no in-person deals in their city, Discover offers a city-deal alert using the account email. New published physical deals trigger matching-city emails. Configure `RESEND_API_KEY`, a verified `RESEND_FROM_EMAIL`, and `MARKETING_POSTAL_ADDRESS` (the business's valid postal address) before enabling delivery. Without these, interest is saved but no marketing email is sent. Alert emails include a one-step unsubscribe link; members can also turn alerts off in Discover. Review the public Privacy Policy and Terms with counsel before treating them as final legal documents.
+
+The homepage uses adapted React Bits SpotlightCard and StarBorder components from [reactbits.dev](https://reactbits.dev/), with reduced-motion handling and the existing navy-and-gold palette.
 
 ## Local development
 
@@ -94,7 +102,7 @@ The Pass2U API key and encryption key are server-only and must never use a `VITE
 
 ## Retention and scheduled maintenance
 
-Run `pnpm locations:purge` at least daily from a Railway cron service or equivalent scheduler. `ACTIVATION_LOCATION_RETENTION_DAYS` controls the exact-coordinate audit window. Changing it does not retroactively restore already-purged coordinates.
+The web process purges expired exact-coordinate evidence on startup and every six hours. `pnpm locations:purge` remains available for manual or scheduled maintenance. `ACTIVATION_LOCATION_RETENTION_DAYS` controls the exact-coordinate audit window. Changing it does not retroactively restore already-purged coordinates.
 
 ## Railway
 

@@ -22,6 +22,20 @@ function createApp() {
 }
 
 describe('production request origin protection', () => {
+  it('keeps member feedback and launch analytics behind their roles', async () => {
+    const target = createApp()
+    for (const [method, url, payload] of [
+      ['POST', '/api/business-suggestions', { businessName: 'Example Shop', city: 'Humble' }],
+      ['POST', '/api/deals/example/issue-reports', { reason: 'expired' }],
+      ['POST', '/api/business-reviews/00000000-0000-4000-8000-000000000000/reports', { reason: 'spam' }],
+      ['GET', '/api/admin/launch-analytics', undefined],
+      ['GET', '/api/admin/launch-feedback', undefined],
+    ] as const) {
+      const response = await target.inject({ method, url, headers: { origin: 'https://canonical.example.com' }, ...(payload ? { payload } : {}) })
+      expect(response.statusCode).toBe(401)
+    }
+  })
+
   it('allows the configured remote deal-image host in production', async () => {
     const response = await createApp().inject({ method: 'GET', url: '/health/live' })
     expect(response.statusCode).toBe(200)
