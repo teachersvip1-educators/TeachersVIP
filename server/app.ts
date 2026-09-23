@@ -2779,15 +2779,41 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   app.get("/api/business-reviews", async () => {
     const result = await db.query<{
       id: string
+      business_id: string
       business_name: string
       rating: number
       review_text: string
       created_at: string
     }>(
-      `SELECT r.id,b.name AS business_name,r.rating,r.review_text,r.created_at
+      `SELECT r.id,r.business_id,b.name AS business_name,r.rating,r.review_text,r.created_at
        FROM business_reviews r JOIN businesses b ON b.id=r.business_id
        WHERE r.status='approved' AND b.published
        ORDER BY r.created_at DESC LIMIT 6`,
+    )
+    return { reviews: result.rows }
+  })
+
+  app.get("/api/businesses/:id/reviews", async (request) => {
+    const { id: businessId } = parse(z.object({ id: z.string().min(1).max(160) }), request.params)
+    const business = await db.query<{ id: string }>(
+      "SELECT id FROM businesses WHERE id=$1 AND published",
+      [businessId],
+    )
+    if (!business.rows[0])
+      throw Object.assign(new Error("Business not found."), { statusCode: 404 })
+    const result = await db.query<{
+      id: string
+      business_id: string
+      business_name: string
+      rating: number
+      review_text: string
+      created_at: string
+    }>(
+      `SELECT r.id,r.business_id,b.name AS business_name,r.rating,r.review_text,r.created_at
+       FROM business_reviews r JOIN businesses b ON b.id=r.business_id
+       WHERE r.business_id=$1 AND r.status='approved' AND b.published
+       ORDER BY r.created_at DESC LIMIT 100`,
+      [businessId],
     )
     return { reviews: result.rows }
   })
@@ -2811,6 +2837,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const activation = await db.query<{ id: string }>(
       `SELECT id FROM deal_activations
        WHERE user_id=$1 AND business_id=$2 AND outcome='successful'
+         AND activation_type IN ('verified_on_site','online_offer_access')
        ORDER BY created_at DESC LIMIT 1`,
       [user.id, businessId],
     )

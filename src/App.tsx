@@ -1501,9 +1501,11 @@ function Page({
 function DealCard({
   deal,
   onSave,
+  onReview,
 }: {
   deal: Deal
   onSave: (deal: Deal) => void
+  onReview: (deal: Deal) => void
 }) {
   return (
     <article className={`deal-card ${deal.used ? "deal-card-used" : ""}`}>
@@ -1582,6 +1584,12 @@ function DealCard({
         </div>
       </Link>
       <button
+        className="deal-review-link"
+        onClick={() => onReview(deal)}
+      >
+        <Star size={14} /> Reviews & feedback
+      </button>
+      <button
         className={`save ${deal.saved ? "saved" : ""}`}
         aria-label={deal.saved ? "Remove saved deal" : "Save deal"}
         onClick={() => onSave(deal)}
@@ -1593,6 +1601,7 @@ function DealCard({
 }
 
 function Discover() {
+  const navigate = useNavigate()
   const [deals, setDeals] = useState<Deal[]>([]),
     [q, setQ] = useState(""),
     [category, setCategory] = useState("All"),
@@ -1695,7 +1704,7 @@ function Discover() {
         <DealSkeletons />
       ) : (
         <>
-          {activeDeals.length > 0 && (
+        {activeDeals.length > 0 && (
             <section className="deal-section">
               <div className="section-heading">
                 <h2>Available Deals</h2>
@@ -1703,7 +1712,12 @@ function Discover() {
               </div>
               <section className="deal-grid">
                 {activeDeals.map((d) => (
-                  <DealCard key={d.id} deal={d} onSave={toggle} />
+                  <DealCard
+                    key={d.id}
+                    deal={d}
+                    onSave={toggle}
+                    onReview={(deal) => navigate(`/deals/${deal.id}#business-reviews`)}
+                  />
                 ))}
               </section>
             </section>
@@ -1716,7 +1730,12 @@ function Discover() {
               </div>
               <section className="deal-grid">
                 {activatedDeals.map((d) => (
-                  <DealCard key={d.id} deal={d} onSave={toggle} />
+                  <DealCard
+                    key={d.id}
+                    deal={d}
+                    onSave={toggle}
+                    onReview={(deal) => navigate(`/deals/${deal.id}#business-reviews`)}
+                  />
                 ))}
               </section>
             </section>
@@ -1892,7 +1911,7 @@ function BusinessReviewForm({ businessId }: { businessId: string }) {
     )
   if (!open)
     return (
-      <button className="action action-soft review-trigger" onClick={() => setOpen(true)}>
+      <button type="button" className="action action-soft review-trigger" onClick={() => setOpen(true)}>
         Leave business feedback
       </button>
     )
@@ -1910,13 +1929,59 @@ function BusinessReviewForm({ businessId }: { businessId: string }) {
         <span>Feedback</span>
         <textarea name="reviewText" required minLength={10} maxLength={1500} placeholder="Share your experience with this participating business." />
       </label>
-      <p>Feedback is reviewed before it appears publicly and does not confirm a purchase.</p>
+      <p>You must have activated an offer from this business. Feedback is reviewed before it appears publicly and does not confirm a purchase.</p>
       {error && <Notice kind="error">{error}</Notice>}
       <div className="business-review-actions">
         <Button type="submit" disabled={busy}>{busy ? "Submitting feedback…" : "Submit for review"}</Button>
         <button className="action action-soft" type="button" onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
       </div>
     </form>
+  )
+}
+
+function BusinessReviews({ businessId, businessName }: { businessId: string, businessName: string }) {
+  const [reviews, setReviews] = useState<PublicBusinessReview[]>([]),
+    [error, setError] = useState("")
+  useEffect(() => {
+    api<{ reviews: PublicBusinessReview[] }>(`/businesses/${encodeURIComponent(businessId)}/reviews`)
+      .then((result) => setReviews(result.reviews))
+      .catch((e) => setError((e as Error).message))
+  }, [businessId])
+  return (
+    <section className="business-reviews" id="business-reviews" aria-labelledby="business-reviews-title">
+      <div className="business-reviews-heading">
+        <div>
+          <span className="public-eyebrow">Educator feedback</span>
+          <h2 id="business-reviews-title">Reviews for {businessName}</h2>
+          <p>Feedback follows a successful offer activation. It is not proof of purchase.</p>
+        </div>
+        {reviews.length > 0 && (
+          <span className="business-review-count">
+            {reviews.length} approved {reviews.length === 1 ? "review" : "reviews"}
+          </span>
+        )}
+      </div>
+      {error ? <Notice kind="error">{error}</Notice> : reviews.length ? (
+        <div className="business-review-list">
+          {reviews.map((review) => (
+            <article className="business-review-card" key={review.id}>
+              <div className="business-review-stars" aria-label={`${review.rating} out of 5 stars`}>
+                {Array.from({ length: 5 }, (_, index) => (
+                  <Star key={index} size={16} weight={index < review.rating ? "fill" : "regular"} />
+                ))}
+              </div>
+              <p>{review.review_text}</p>
+              <small>{new Date(review.created_at).toLocaleDateString()}</small>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="business-reviews-empty">
+          No approved educator reviews yet. After activating this business’s offer,
+          you can be the first to share feedback.
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -1937,6 +2002,10 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
       })
       .catch((e) => setError(e.message))
   }, [id])
+  useEffect(() => {
+    if (deal && window.location.hash === "#business-reviews")
+      requestAnimationFrame(() => document.getElementById("business-reviews")?.scrollIntoView({ behavior: "smooth", block: "start" }))
+  }, [deal])
   useEffect(() => {
     if (!activation?.expiresAt) return
     const tick = () => {
@@ -2218,7 +2287,6 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
                 <IdentificationCard size={19} />
                 Show VIP Card
               </Link>
-              <BusinessReviewForm businessId={deal.business_id} />
             </section>
           ) : (
             <div className="flow-actions">
@@ -2267,6 +2335,10 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
               )}
             </div>
           )}
+          {user.verified && (
+            <BusinessReviewForm businessId={deal.business_id} />
+          )}
+          <BusinessReviews businessId={deal.business_id} businessName={deal.business_name} />
           {activation && error && <Notice kind="error">{error}</Notice>}
         </div>
       </section>
@@ -2275,6 +2347,7 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
 }
 
 function Saved() {
+  const navigate = useNavigate()
   const [deals, setDeals] = useState<Deal[]>([]),
     [loading, setLoading] = useState(true)
   const load = () =>
@@ -2295,7 +2368,12 @@ function Saved() {
       ) : deals.length ? (
         <section className="deal-grid">
           {deals.map((d) => (
-            <DealCard key={d.id} deal={{ ...d, saved: true }} onSave={remove} />
+            <DealCard
+              key={d.id}
+              deal={{ ...d, saved: true }}
+              onSave={remove}
+              onReview={(deal) => navigate(`/deals/${deal.id}#business-reviews`)}
+            />
           ))}
         </section>
       ) : (
