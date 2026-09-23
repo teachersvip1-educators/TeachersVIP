@@ -243,10 +243,15 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const recipients = await db.query<{ user_id: string, email: string, city: string, title: string, unsubscribe_token: string }>(
       `SELECT DISTINCT a.user_id,a.email,a.city,a.unsubscribe_token,d.title FROM city_deal_alerts a
        JOIN deals d ON d.id=$1 AND d.published AND d.channel='in_person'
+         AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())
        JOIN businesses b ON b.id=d.business_id AND b.published
        JOIN deal_locations dl ON dl.deal_id=d.id
        JOIN business_locations l ON l.id=dl.business_location_id AND l.active
-       WHERE a.active AND (lower(l.city)=lower(a.city) OR position(', ' || lower(a.city) || ',' in lower(l.address))>0)
+       WHERE a.active AND (
+         lower(trim(l.city))=lower(trim(split_part(a.city, ',', 1)))
+         OR lower(l.address) LIKE lower(trim(split_part(a.city, ',', 1))) || ',%'
+         OR position(', ' || lower(trim(split_part(a.city, ',', 1))) || ',' in lower(l.address))>0
+       )
          AND NOT EXISTS (SELECT 1 FROM city_deal_alert_deliveries x WHERE x.user_id=a.user_id AND x.deal_id=d.id)`,
       [dealId],
     )
