@@ -1754,51 +1754,7 @@ function Discover({ user }: { user: SessionUser }) {
       )}
       {!loading && !deals.some(deal => deal.channel === 'in_person' && deal.address?.toLowerCase().includes(`, ${user.city.split(',')[0].trim().toLowerCase()},`)) && <CityAlert city={user.city.split(',')[0].trim()} email={user.personal_email} />}
       <SuggestBusiness city={user.city} />
-      <NewsletterOptIn />
     </Page>
-  )
-}
-
-function NewsletterOptIn() {
-  const [email, setEmail] = useState(""),
-    [sent, setSent] = useState(false),
-    [error, setError] = useState("")
-  return (
-    <section className="newsletter">
-      <div>
-        <span>Never Miss a Teacher Deal</span>
-        <p>
-          Get new partnerships, deals and giveaways delivered to your inbox.
-        </p>
-      </div>
-      {sent ? (
-        <strong>You're on the list.</strong>
-      ) : (
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault()
-            setError("")
-            try {
-              await post("/newsletter", { email })
-              setSent(true)
-            } catch (e) {
-              setError((e as Error).message)
-            }
-          }}
-        >
-          <input
-            type="email"
-            aria-label="Email address"
-            placeholder="Your email address"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-          <button type="submit">Join</button>
-        </form>
-      )}
-      {error && <small className="newsletter-error">{error}</small>}
-    </section>
   )
 }
 

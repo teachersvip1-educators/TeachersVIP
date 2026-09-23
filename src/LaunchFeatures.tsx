@@ -137,45 +137,58 @@ export function CityAlert({ city, email }: { city: string; email: string }) {
 }
 
 export function SuggestBusiness({ city }: { city: string }) {
+  const [open, setOpen] = useState(false)
   return (
-    <AnimatedSurface className="launch-panel">
-      <FeedbackForm
-        title="Suggest a Business"
-        endpoint="/business-suggestions"
-        values={(form) => ({
-          businessName: form.get("businessName"),
-          city: form.get("city"),
-          locationHint: form.get("locationHint"),
-          reason: form.get("reason"),
-        })}
+    <div className="suggest-business">
+      <button
+        className="suggest-business-trigger"
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
       >
-        <p>Tell us which business you would like to see on TeachersVIP.</p>
-        <div className="launch-fields">
-          <label>
-            Business name
-            <input name="businessName" required minLength={2} maxLength={140} />
-          </label>
-          <label>
-            City
-            <input
-              name="city"
-              defaultValue={city}
-              required
-              minLength={2}
-              maxLength={120}
-            />
-          </label>
-        </div>
-        <label>
-          Location or website (optional)
-          <input name="locationHint" maxLength={300} />
-        </label>
-        <label>
-          Why this business? (optional)
-          <textarea name="reason" maxLength={1000} />
-        </label>
-      </FeedbackForm>
-    </AnimatedSurface>
+        {open ? "Close suggestion form" : "Suggest a business"}
+      </button>
+      {open && (
+        <AnimatedSurface className="launch-panel">
+          <FeedbackForm
+            title="Suggest a Business"
+            endpoint="/business-suggestions"
+            values={(form) => ({
+              businessName: form.get("businessName"),
+              city: form.get("city"),
+              locationHint: form.get("locationHint"),
+              reason: form.get("reason"),
+            })}
+          >
+            <p>Tell us which business you would like to see on TeachersVIP.</p>
+            <div className="launch-fields">
+              <label>
+                Business name
+                <input name="businessName" required minLength={2} maxLength={140} />
+              </label>
+              <label>
+                City
+                <input
+                  name="city"
+                  defaultValue={city}
+                  required
+                  minLength={2}
+                  maxLength={120}
+                />
+              </label>
+            </div>
+            <label>
+              Location or website (optional)
+              <input name="locationHint" maxLength={300} />
+            </label>
+            <label>
+              Why this business? (optional)
+              <textarea name="reason" maxLength={1000} />
+            </label>
+          </FeedbackForm>
+        </AnimatedSurface>
+      )}
+    </div>
   )
 }
 
