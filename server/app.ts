@@ -30,6 +30,16 @@ import {
   type EducatorRole,
 } from "./verification/index.js"
 import { activateDeal } from "./deals/activation.js"
+import { registerOfferInterestRoutes } from "./deals/interests.js"
+import { isValidTimezone, withOpeningStatus } from "../shared/business-hours.js"
+
+const hoursIntervalSchema = z.object({
+  open: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  close: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+}).refine(value => value.open !== value.close, { message: 'Opening and closing times must differ. Use two intervals for a full day.' })
+const dayHoursSchema = z.array(hoursIntervalSchema).max(4).optional()
+const openingHoursSchema = z.strictObject({ mon: dayHoursSchema, tue: dayHoursSchema, wed: dayHoursSchema, thu: dayHoursSchema, fri: dayHoursSchema, sat: dayHoursSchema, sun: dayHoursSchema }).nullable().optional()
+const timezoneSchema = z.string().trim().min(3).max(80).refine(isValidTimezone, { message: 'Enter a valid IANA timezone.' })
 
 const SESSION_COOKIE = "teachersvip_session"
 const allowedAnalytics = new Set([
@@ -97,16 +107,32 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
       email: "Email address",
       role: "Educator role",
       roleAttestation: "Eligibility confirmation",
+      id: "URL slug or offer ID",
+      name: "Business name",
+      category: "Category",
+      description: "Description",
+      imageUrl: "Image URL",
+      websiteUrl: "Website URL",
+      latitude: "Latitude",
+      longitude: "Longitude",
+      timezone: "Timezone",
+      radiusMeters: "Radius",
+      title: "Offer title",
+      businessId: "Business",
+      eventName: "Event name",
+      restrictions: "Restrictions",
+      redemptionValue: "Redemption value",
     }
     const label = labels[field] ?? "This field"
     let message = `${label} is invalid.`
-    if (issue?.code === "too_small")
+    if (issue?.code === "custom") message = issue.message
+    else if (issue?.code === "too_small")
       message = `${label} must contain at least ${issue.minimum} characters.`
     else if (issue?.code === "too_big") message = `${label} is too long.`
     else if (issue?.code === "invalid_type") message = `${label} is required.`
     else if (issue?.code === "invalid_format" && issue.format === "email")
       message = `Enter a valid ${label.toLowerCase()}.`
-    throw Object.assign(new Error(message), { statusCode: 400 })
+    throw Object.assign(new Error(message), { statusCode: 400, field })
   }
   return result.data
 }
@@ -548,7 +574,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   app.get("/health/ready", async (_request, reply) => {
     try {
       const schema = await db.query<{ ready: boolean }>(
-        "SELECT to_regclass('public.city_deal_alerts') IS NOT NULL AND to_regclass('public.business_review_comments') IS NOT NULL AS ready",
+        "SELECT to_regclass('public.city_deal_alerts') IS NOT NULL AND to_regclass('public.business_review_comments') IS NOT NULL AND to_regclass('public.offer_interest_submissions') IS NOT NULL AS ready",
       )
       if (!schema.rows[0]?.ready) throw new Error('Launch schema is unavailable')
       return { status: "ready" }
@@ -960,14 +986,14 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       activationMetrics,
     ] = await Promise.all([
       optionalQuery(
-        db.query(`SELECT b.id,b.name,b.category,b.description,b.image_url,b.website_url,b.distance,b.hours,b.is_open,b.address,b.latitude,b.longitude,b.published,
+        db.query(`SELECT b.id,b.name,b.category,b.description,b.image_url,b.website_url,b.distance,b.hours,b.is_open,b.opening_hours,b.hours_timezone,b.address,b.latitude,b.longitude,b.published,
         COALESCE((SELECT json_agg(json_build_object('id',l.id,'name',l.location_name,'address',l.address,'timezone',l.timezone,'radiusMeters',l.geofence_radius_m,'latitude',l.latitude,'longitude',l.longitude) ORDER BY l.created_at) FROM business_locations l WHERE l.business_id=b.id AND l.active),'[]'::json) locations
         FROM businesses b ORDER BY b.name`),
         { rows: [] } as { rows: unknown[] },
       ),
       optionalQuery(
         db.query(
-          `SELECT d.id,d.business_id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.image_url,d.published,d.starts_at,d.ends_at,d.created_at,d.redemption_method,d.display_ttl_seconds,d.usage_limit_count,d.usage_limit_period,d.usage_limit_scope,d.tracking_mode,b.name business_name FROM deals d JOIN businesses b ON b.id=d.business_id ORDER BY d.created_at DESC`,
+          `SELECT d.id,d.business_id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.image_url,d.published,d.starts_at,d.ends_at,d.created_at,d.redemption_method,d.display_ttl_seconds,d.usage_limit_count,d.usage_limit_period,d.usage_limit_scope,d.tracking_mode,d.cta_type,d.event_name,b.name business_name FROM deals d JOIN businesses b ON b.id=d.business_id ORDER BY d.created_at DESC`,
         ),
         { rows: [] } as { rows: unknown[] },
       ),
@@ -1012,7 +1038,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       ),
     ])
     return {
-      businesses: businesses.rows,
+      businesses: businesses.rows.map(row => withOpeningStatus(row as Parameters<typeof withOpeningStatus>[0])),
       deals: deals.rows,
       inquiries: inquiries.rows,
       audit: audit.rows,
@@ -1787,17 +1813,18 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           websiteUrl: z.url().nullable().optional(),
           distance: z.string().trim().max(120).nullable().optional(),
           hours: z.string().trim().max(120).nullable().optional(),
+          openingHours: openingHoursSchema,
           isOpen: z.boolean().nullable().optional(),
           address: z.string().trim().max(200).nullable().optional(),
           latitude: z.number().min(-90).max(90).nullable().optional(),
           longitude: z.number().min(-180).max(180).nullable().optional(),
           locationName: z.string().trim().max(140).default("Primary location"),
-          timezone: z.string().trim().min(3).max(80).default("UTC"),
+          timezone: timezoneSchema.default("UTC"),
           radiusMeters: z.number().int().min(25).max(5000).default(150),
         })
         .refine(
           (value) => (value.latitude == null) === (value.longitude == null),
-          { message: "Latitude and longitude must be supplied together." },
+          { path: ['latitude'], message: "Latitude and longitude must be supplied together." },
         ),
       request.body,
     )
@@ -1815,7 +1842,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     try {
       await client.query("BEGIN")
       const result = await client.query(
-        `INSERT INTO businesses(id,name,category,description,image_url,website_url,distance,hours,is_open,address,latitude,longitude) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+        `INSERT INTO businesses(id,name,category,description,image_url,website_url,distance,hours,is_open,address,latitude,longitude,opening_hours,hours_timezone) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
         [
           body.id,
           body.name,
@@ -1829,6 +1856,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           body.address || null,
           body.latitude ?? null,
           body.longitude ?? null,
+          body.openingHours == null ? null : JSON.stringify(body.openingHours),
+          body.timezone,
         ],
       )
       businessId = result.rows[0].id
@@ -1862,7 +1891,43 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     } finally {
       client.release()
     }
-    return { ok: true }
+    return { ok: true, businessId }
+  })
+
+  app.get('/api/admin/businesses/:id/locations', async (request, reply) => {
+    requireSuperadmin(request)
+    const { id } = parse(z.object({ id: z.string().min(1).max(80) }), request.params)
+    const business = await db.query('SELECT id FROM businesses WHERE id=$1', [id])
+    if (!business.rows.length) return reply.code(404).send({ error: 'Business not found.' })
+    const result = await db.query('SELECT id,location_name AS name,address,timezone,geofence_radius_m AS "radiusMeters",latitude,longitude,active FROM business_locations WHERE business_id=$1 ORDER BY created_at,id', [id])
+    return { locations: result.rows }
+  })
+
+  app.post('/api/admin/businesses/:id/locations', async (request, reply) => {
+    requireSuperadmin(request)
+    const { id } = parse(z.object({ id: z.string().min(1).max(80) }), request.params)
+    const body = parse(z.object({
+      name: z.string().trim().min(2).max(140),
+      address: z.string().trim().max(200).nullable().optional(),
+      timezone: timezoneSchema.default('UTC'),
+      radiusMeters: z.number().int().min(25).max(5000).default(150),
+      latitude: z.number().min(-90).max(90).nullable().optional(),
+      longitude: z.number().min(-180).max(180).nullable().optional(),
+    }).refine(value => (value.latitude == null) === (value.longitude == null), { path: ['latitude'], message: 'Latitude and longitude must be supplied together.' }), request.body)
+    const client = await db.connect()
+    try {
+      await client.query('BEGIN')
+      const business = await client.query('SELECT id FROM businesses WHERE id=$1 FOR KEY SHARE', [id])
+      if (!business.rows.length) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'Business not found.' })
+      }
+      const result = await client.query('INSERT INTO business_locations(id,business_id,location_name,address,timezone,latitude,longitude,geofence_radius_m) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,location_name AS name,address,timezone,latitude,longitude,geofence_radius_m AS "radiusMeters",active', [`${id}:${randomUUID()}`,id,body.name,body.address || null,body.timezone,body.latitude ?? null,body.longitude ?? null,body.radiusMeters])
+      await client.query("INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'created','business_location',$3,$4)", [randomUUID(),request.currentUser!.id,result.rows[0].id,JSON.stringify({businessId:id,name:body.name})])
+      await client.query('COMMIT')
+      return reply.code(201).send({ location: result.rows[0] })
+    } catch (error) { await client.query('ROLLBACK'); throw error }
+    finally { client.release() }
   })
 
   app.patch("/api/admin/businesses/:id", async (request) => {
@@ -1878,6 +1943,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           websiteUrl: z.url().nullable().optional(),
           distance: z.string().trim().max(120).nullable().optional(),
           hours: z.string().trim().max(120).nullable().optional(),
+          openingHours: openingHoursSchema,
+          timezone: timezoneSchema.optional(),
           isOpen: z.boolean().nullable().optional(),
           address: z.string().trim().max(200).nullable().optional(),
           published: z.boolean().optional(),
@@ -1893,6 +1960,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       websiteUrl: "website_url",
       distance: "distance",
       hours: "hours",
+      openingHours: "opening_hours",
+      timezone: "hours_timezone",
       isOpen: "is_open",
       address: "address",
       published: "published",
@@ -1902,7 +1971,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     )
     await db.query(
       `UPDATE businesses SET ${fields.map(([field], index) => `${mappings[field]}=$${index + 1}`).join(",")} WHERE id=$${fields.length + 1}`,
-      [...fields.map(([, value]) => value), id],
+      [...fields.map(([field, value]) => field === 'openingHours' && value != null ? JSON.stringify(value) : value), id],
     )
     await db.query(
       `INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'updated','business',$3,$4)`,
@@ -1927,6 +1996,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             .regex(/^[a-z0-9-]+$/)
             .max(100),
           businessId: z.string().trim().min(1).max(80),
+          ctaType: z.enum(['use_deal','join_waitlist','rsvp','get_launch_invite']).default('use_deal'),
+          eventName: z.string().trim().min(2).max(160).nullable().optional(),
           title: z.string().trim().min(2).max(160),
           description: z.string().trim().min(5).max(1000),
           channel: z.enum(["in_person", "online"]),
@@ -1967,6 +2038,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           endsAt: z.string().datetime().nullable().optional(),
         })
         .superRefine((value, context) => {
+          if (value.endsAt && value.startsAt && value.endsAt <= value.startsAt)
+            context.addIssue({ code: 'custom', path: ['endsAt'], message: 'End date must be after the start date.' })
+          if (value.ctaType !== 'use_deal') return
           if (
             value.usageLimitPeriod === "none" &&
             value.usageLimitCount !== null
@@ -2013,7 +2087,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     try {
       await client.query("BEGIN")
       await client.query(
-        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,image_url,published,starts_at,ends_at,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,image_url,published,starts_at,ends_at,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,cta_type,event_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
         [
           body.id,
           body.businessId,
@@ -2025,7 +2099,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           body.promoCode
             ? encrypt(body.promoCode, config.DATA_ENCRYPTION_KEY)
             : null,
-          body.estimatedSavingsCents,
+          body.ctaType === 'use_deal' ? body.estimatedSavingsCents : 0,
           body.featured,
           body.sponsored,
           body.giveaway,
@@ -2037,21 +2111,23 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             ? encrypt(redemptionValue, config.DATA_ENCRYPTION_KEY)
             : null,
           body.displayTtlSeconds,
-          body.usageLimitCount,
-          body.usageLimitPeriod,
+          body.ctaType === 'use_deal' ? body.usageLimitCount : null,
+          body.ctaType === 'use_deal' ? body.usageLimitPeriod : 'none',
           body.usageLimitScope,
           body.trackingMode ??
             (body.channel === "online" ? "online" : "standard_geolocation"),
+          body.ctaType,
+          body.eventName || body.title,
         ],
       )
-      if (body.channel === "in_person") {
+      if (body.channel === "in_person" && body.ctaType === 'use_deal') {
         const locations = body.locationIds.length
           ? await client.query<{ id: string }>(
-              "SELECT id FROM business_locations WHERE business_id=$1 AND active AND id=ANY($2::text[])",
+              "SELECT id FROM business_locations WHERE business_id=$1 AND active AND latitude IS NOT NULL AND longitude IS NOT NULL AND id=ANY($2::text[])",
               [body.businessId, body.locationIds],
             )
           : await client.query<{ id: string }>(
-              "SELECT id FROM business_locations WHERE business_id=$1 AND active ORDER BY created_at",
+              "SELECT id FROM business_locations WHERE business_id=$1 AND active AND latitude IS NOT NULL AND longitude IS NOT NULL ORDER BY created_at",
               [body.businessId],
             )
         if (
@@ -2061,9 +2137,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         )
           throw Object.assign(
             new Error(
-              "Select at least one valid participating location for this in-person deal.",
+              "Add coordinates to at least one participating location for this in-person Use Deal offer. Every selected location needs both latitude and longitude.",
             ),
-            { statusCode: 400 },
+            { statusCode: 400, field: 'locationIds' },
           )
         for (const location of locations.rows)
           await client.query(
@@ -2433,7 +2509,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const userId = request.currentUser?.id ?? null
     const result = await db.query(
       `SELECT d.id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.starts_at,d.ends_at,d.usage_limit_count,d.usage_limit_period,d.redemption_method AS "redemptionMethod",
-      b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.address,b.latitude,b.longitude,
+      d.cta_type,d.event_name,
+      b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.opening_hours,b.hours_timezone,b.address,b.latitude,b.longitude,
       EXISTS(SELECT 1 FROM saved_deals s WHERE s.deal_id=d.id AND s.user_id=$1) saved,
       EXISTS(SELECT 1 FROM deal_activations a WHERE a.deal_id=d.id AND a.user_id=$1 AND a.outcome='successful') used
       FROM deals d JOIN businesses b ON b.id=d.business_id
@@ -2449,22 +2526,23 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         query.saved ?? false,
       ],
     )
-    return { deals: result.rows }
+    return { deals: result.rows.map(withOpeningStatus) }
   })
 
   app.get("/api/deals/:id", async (request, reply) => {
     const { id } = parse(z.object({ id: z.string() }), request.params)
     const result = await db.query(
       `SELECT d.id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.starts_at,d.ends_at,d.usage_limit_count,d.usage_limit_period,d.redemption_method AS "redemptionMethod",
-      b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.address,b.latitude,b.longitude,
+      d.cta_type,d.event_name,EXISTS(SELECT 1 FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2) interest_submitted,
+      b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.opening_hours,b.hours_timezone,b.address,b.latitude,b.longitude,
       COALESCE((SELECT json_agg(json_build_object('id',bl.id,'name',bl.location_name,'address',COALESCE(bl.address,b.address),'latitude',bl.latitude,'longitude',bl.longitude,'radiusMeters',bl.geofence_radius_m,'timezone',bl.timezone) ORDER BY bl.location_name,bl.id)
         FROM deal_locations dl JOIN business_locations bl ON bl.id=dl.business_location_id WHERE dl.deal_id=d.id AND bl.active),'[]'::json) locations
       FROM deals d JOIN businesses b ON b.id=d.business_id WHERE d.id=$1 AND d.published AND b.published AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())`,
-      [id],
+      [id, request.currentUser?.id ?? null],
     )
     if (!result.rows[0])
       return reply.code(404).send({ error: "Deal not found." })
-    return { deal: result.rows[0] }
+    return { deal: withOpeningStatus(result.rows[0]) }
   })
 
   app.post(
@@ -2487,6 +2565,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         }),
         request.body,
       )
+      const offer = await db.query('SELECT cta_type FROM deals WHERE id=$1', [id])
+      if (offer.rows[0] && offer.rows[0].cta_type !== 'use_deal')
+        return reply.code(400).send({ error: 'This offer collects educator interest. Use its signup action instead.' })
       const client = await db.connect()
       try {
         await client.query("BEGIN")
@@ -3159,12 +3240,17 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return { totals: totals.rows[0], cities: cities.rows, viewed: viewed.rows, saved: saved.rows }
   })
 
-  app.setErrorHandler((error: any, _request, reply) => {
+  registerOfferInterestRoutes(app, db, requireVerified, requireSuperadmin)
+
+  app.setErrorHandler((error: any, request, reply) => {
     app.log.error(error)
+    if (error.code === '23505' && ['/api/admin/businesses', '/api/admin/deals'].includes(request.url))
+      return reply.code(409).send({ error: 'This URL slug or offer ID already exists. Choose a different one.', field: 'id' })
     reply
       .code(error.statusCode ?? 500)
       .send({
         error: error.statusCode ? error.message : "Something went wrong.",
+        ...(error.field && request.url.startsWith('/api/admin/') ? { field: error.field } : {}),
       })
   })
 

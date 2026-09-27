@@ -1,12 +1,16 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
+
 import { Link, useSearchParams } from "react-router-dom"
+
 import { api, patch, post } from "./lib/api"
 
 export function AnimatedSurface({
   children,
+
   className = "",
 }: {
   children: ReactNode
+
   className?: string
 }) {
   return <section className={`launch-enter ${className}`}>{children}</section>
@@ -31,25 +35,39 @@ export function SiteFooter() {
 
 function FeedbackForm({
   title,
+
   endpoint,
+
   children,
+
   values,
 }: {
   title: string
+
   endpoint: string
+
   children: ReactNode
+
   values: (form: FormData) => unknown
 }) {
   const [status, setStatus] = useState("")
+
   const [busy, setBusy] = useState(false)
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     const form = event.currentTarget
+
     setBusy(true)
+
     setStatus("")
+
     try {
       await post(endpoint, values(new FormData(form)))
+
       setStatus("Submitted. Thank you for helping improve TeachersVIP.")
+
       form.reset()
     } catch (error) {
       setStatus((error as Error).message)
@@ -57,6 +75,7 @@ function FeedbackForm({
       setBusy(false)
     }
   }
+
   return (
     <form className="launch-form" onSubmit={submit}>
       <h3>{title}</h3>
@@ -71,31 +90,47 @@ function FeedbackForm({
 
 export function CityAlert({ city, email }: { city: string; email: string }) {
   const [chosenCity, setChosenCity] = useState(city)
+
   const [savedCity, setSavedCity] = useState(city)
+
   const [active, setActive] = useState(false)
+
   const [status, setStatus] = useState("")
+
   useEffect(() => {
     api<{ alert: { city: string; active: boolean } | null }>("/me/city-alert")
+
       .then(({ alert }) => {
         if (alert) {
           setChosenCity(alert.city)
+
           setSavedCity(alert.city)
+
           setActive(alert.active)
         }
       })
+
       .catch(() => {})
   }, [])
+
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setStatus("")
+
     const nextActive = !active || savedCity !== chosenCity
+
     try {
       const result = await api<{ deliveryReady: boolean }>("/me/city-alert", {
         method: "PUT",
+
         body: JSON.stringify({ city: chosenCity, active: nextActive }),
       })
+
       setActive(nextActive)
+
       setSavedCity(chosenCity)
+
       setStatus(
         nextActive
           ? result.deliveryReady
@@ -107,6 +142,7 @@ export function CityAlert({ city, email }: { city: string; email: string }) {
       setStatus((error as Error).message)
     }
   }
+
   return (
     <AnimatedSurface className="launch-panel">
       <h2>Notify Me When Deals Arrive</h2>
@@ -138,6 +174,7 @@ export function CityAlert({ city, email }: { city: string; email: string }) {
 
 export function SuggestBusiness({ city }: { city: string }) {
   const [open, setOpen] = useState(false)
+
   return (
     <div className="suggest-business">
       <button
@@ -155,8 +192,11 @@ export function SuggestBusiness({ city }: { city: string }) {
             endpoint="/business-suggestions"
             values={(form) => ({
               businessName: form.get("businessName"),
+
               city: form.get("city"),
+
               locationHint: form.get("locationHint"),
+
               reason: form.get("reason"),
             })}
           >
@@ -164,7 +204,12 @@ export function SuggestBusiness({ city }: { city: string }) {
             <div className="launch-fields">
               <label>
                 Business name
-                <input name="businessName" required minLength={2} maxLength={140} />
+                <input
+                  name="businessName"
+                  required
+                  minLength={2}
+                  maxLength={140}
+                />
               </label>
               <label>
                 City
@@ -201,6 +246,7 @@ export function OfferReport({ dealId }: { dealId: string }) {
         endpoint={`/deals/${encodeURIComponent(dealId)}/issue-reports`}
         values={(form) => ({
           reason: form.get("reason"),
+
           details: form.get("details"),
         })}
       >
@@ -245,6 +291,7 @@ export function ReviewTools({ reviewId }: { reviewId: string }) {
           endpoint={`/business-reviews/${reviewId}/reports`}
           values={(form) => ({
             reason: form.get("reason"),
+
             details: form.get("details"),
           })}
         >
@@ -277,7 +324,9 @@ export function ContactPage({ embedded = false }: { embedded?: boolean }) {
           endpoint="/contact"
           values={(form) => ({
             name: form.get("name"),
+
             email: form.get("email"),
+
             message: form.get("message"),
           })}
         >
@@ -345,7 +394,9 @@ export function AboutPage({ embedded = false }: { embedded?: boolean }) {
 
 export function UnsubscribePage({ embedded = false }: { embedded?: boolean }) {
   const [params] = useSearchParams()
+
   const [status, setStatus] = useState("")
+
   return (
     <main className="public-site">
       <div className="launch-page">
@@ -358,6 +409,7 @@ export function UnsubscribePage({ embedded = false }: { embedded?: boolean }) {
               await post("/city-alerts/unsubscribe", {
                 token: params.get("token"),
               })
+
               setStatus("City alerts have been turned off.")
             } catch (error) {
               setStatus((error as Error).message)
@@ -375,9 +427,11 @@ export function UnsubscribePage({ embedded = false }: { embedded?: boolean }) {
 
 export function InformationPage({
   kind,
+
   embedded = false,
 }: {
   kind: "privacy" | "terms"
+
   embedded?: boolean
 }) {
   return (
@@ -436,197 +490,263 @@ export function InformationPage({
 
 type FeedbackData = {
   suggestions: any[]
+
   offerReports: any[]
+
   reviewReports: any[]
+
   comments: any[]
+
   contacts: any[]
 }
+
 type LaunchMetrics = {
   totals: Record<string, number>
+
   cities: { city: string; signups: number }[]
+
   viewed: { id: string; title: string; views: number }[]
+
   saved: { id: string; title: string; saves: number }[]
 }
-export function AdminLaunchPanel() {
+
+export function AdminLaunchPanel({
+  view = "analytics",
+}: {
+  view?: "analytics" | "reports" | "messages"
+}) {
   const [feedback, setFeedback] = useState<FeedbackData | null>(null)
+
   const [metrics, setMetrics] = useState<LaunchMetrics | null>(null)
+
   const [error, setError] = useState("")
+
   const load = () =>
     Promise.all([
       api<FeedbackData>("/admin/launch-feedback"),
+
       api<LaunchMetrics>("/admin/launch-analytics"),
     ])
+
       .then(([a, b]) => {
         setFeedback(a)
+
         setMetrics(b)
       })
+
       .catch((e) => setError(e.message))
+
   useEffect(() => {
     void load()
   }, [])
+
   const update = async (kind: string, id: string, status: string) => {
     try {
       await patch(`/admin/launch-feedback/${kind}/${id}`, { status })
+
       await load()
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   const updateComment = async (id: string, status: string) => {
     try {
       await patch(`/admin/review-comments/${id}`, { status })
+
       await load()
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   return (
     <>
-      <section className="admin-card launch-admin">
-        <h2>Launch analytics</h2>
-        {error && <p role="alert">{error}</p>}
-        {metrics && (
-          <>
-            <div className="launch-stat-grid">
-              {Object.entries(metrics.totals).map(([key, value]) => (
-                <div key={key}>
-                  <strong>{value}</strong>
-                  <span>{key.replace(/_/g, " ")}</span>
-                </div>
-              ))}
-            </div>
-            <div className="launch-admin-columns">
-              <div>
-                <h3>Sign-ups by city</h3>
-                {metrics.cities.map((x) => (
-                  <p key={x.city}>
-                    {x.city} · {x.signups}
-                  </p>
-                ))}
-              </div>
-              <div>
-                <h3>Most-viewed deals</h3>
-                {metrics.viewed.map((x) => (
-                  <p key={x.id}>
-                    {x.title} · {x.views}
-                  </p>
-                ))}
-              </div>
-              <div>
-                <h3>Most-saved deals</h3>
-                {metrics.saved.map((x) => (
-                  <p key={x.id}>
-                    {x.title} · {x.saves}
-                  </p>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </section>
-      <section className="admin-card launch-admin">
-        <h2>Member feedback and leads</h2>
-        {feedback && (
-          <>
-            <h3>Business suggestions</h3>
-            {feedback.suggestions.map((x) => (
-              <article key={x.id}>
-                <strong>
-                  {x.business_name} · {x.city}
-                </strong>
-                <p>
-                  {x.location_hint} {x.reason}
-                </p>
-                <small>
-                  {x.educator_email} · {x.status}
-                </small>
-                <select
-                  aria-label={`Status for ${x.business_name}`}
-                  value={x.status}
-                  onChange={(e) =>
-                    void update("suggestion", x.id, e.target.value)
-                  }
-                >
-                  <option value="new">New</option>
-                  <option value="contacted">Contacted</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </article>
-            ))}
-            <h3>Offer reports</h3>
-            {feedback.offerReports.map((x) => (
-              <article key={x.id}>
-                <strong>
-                  {x.title} · {x.reason}
-                </strong>
-                <p>{x.details}</p>
-                <select
-                  aria-label={`Status for offer report ${x.id}`}
-                  value={x.status}
-                  onChange={(e) => void update("offer", x.id, e.target.value)}
-                >
-                  <option value="open">Open</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="dismissed">Dismissed</option>
-                </select>
-              </article>
-            ))}
-            <h3>Review reports</h3>
-            {feedback.reviewReports.map((x) => (
-              <article key={x.id}>
-                <strong>
-                  {x.business_name} · {x.reason}
-                </strong>
-                <p>{x.review_text}</p>
-                <p>{x.details}</p>
-                <select
-                  aria-label={`Status for review report ${x.id}`}
-                  value={x.status}
-                  onChange={(e) => void update("review", x.id, e.target.value)}
-                >
-                  <option value="open">Open</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="dismissed">Dismissed</option>
-                </select>
-              </article>
-            ))}
-            <h3>Review comments</h3>
-            {feedback.comments.map((x) => (
-              <article key={x.id}>
-                <p>{x.body}</p>
-                <small>{x.status}</small>
-                {x.status !== "rejected" && (
-                  <div>
-                    {x.status === "pending" && (
-                      <button
-                        className="action action-gold"
-                        onClick={() => void updateComment(x.id, "approved")}
-                      >
-                        Approve
-                      </button>
-                    )}
-                    <button
-                      className="action action-soft"
-                      onClick={() => void updateComment(x.id, "rejected")}
-                    >
-                      {x.status === "approved" ? "Remove" : "Reject"}
-                    </button>
+      {!metrics && !feedback && !error && (
+        <p role="status">
+          Loading {view === "analytics" ? "platform analytics" : "submissions"}…
+        </p>
+      )}
+      {view === "analytics" && (
+        <section className="admin-card launch-admin">
+          <h2>Platform Analytics</h2>
+          {error && <p role="alert">{error}</p>}
+          {metrics && (
+            <>
+              <div className="launch-stat-grid">
+                {Object.entries(metrics.totals).map(([key, value]) => (
+                  <div key={key}>
+                    <strong>{value}</strong>
+                    <span>{key.replace(/_/g, " ")}</span>
                   </div>
-                )}
-              </article>
-            ))}
-            <h3>Contact messages</h3>
-            {feedback.contacts.map((x) => (
-              <article key={x.id}>
-                <strong>
-                  {x.name} · {x.email}
-                </strong>
-                <p>{x.message}</p>
-              </article>
-            ))}
-          </>
-        )}
-      </section>
+                ))}
+              </div>
+              <div className="launch-admin-columns">
+                <div>
+                  <h3>Sign-ups by city</h3>
+                  {metrics.cities.map((x) => (
+                    <p key={x.city}>
+                      {x.city} · {x.signups}
+                    </p>
+                  ))}
+                </div>
+                <div>
+                  <h3>Most-viewed deals</h3>
+                  {metrics.viewed.map((x) => (
+                    <p key={x.id}>
+                      {x.title} · {x.views}
+                    </p>
+                  ))}
+                </div>
+                <div>
+                  <h3>Most-saved deals</h3>
+                  {metrics.saved.map((x) => (
+                    <p key={x.id}>
+                      {x.title} · {x.saves}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+      {view !== "analytics" && (
+        <section className="admin-card launch-admin">
+          <h2>
+            {view === "reports"
+              ? "Reports & Comments"
+              : "Suggestions & Messages"}
+          </h2>
+          {error && <p role="alert">{error}</p>}
+          {feedback && (
+            <>
+              {view === "messages" && (
+                <>
+                  <h3>Business suggestions</h3>
+                  {feedback.suggestions.map((x) => (
+                    <article key={x.id}>
+                      <strong>
+                        {x.business_name} · {x.city}
+                      </strong>
+                      <p>
+                        {x.location_hint} {x.reason}
+                      </p>
+                      <small>
+                        {x.educator_email} · {x.status}
+                      </small>
+                      <select
+                        aria-label={`Status for ${x.business_name}`}
+                        value={x.status}
+                        onChange={(e) =>
+                          void update("suggestion", x.id, e.target.value)
+                        }
+                      >
+                        <option value="new">New</option>
+                        <option value="contacted">Contacted</option>
+                        <option value="archived">Archived</option>
+                      </select>
+                    </article>
+                  ))}
+                </>
+              )}
+              {view === "reports" && (
+                <>
+                  <h3>Offer reports</h3>
+                  {feedback.offerReports.map((x) => (
+                    <article key={x.id}>
+                      <strong>
+                        {x.title} · {x.reason}
+                      </strong>
+                      <p>{x.details}</p>
+                      <select
+                        aria-label={`Status for offer report ${x.id}`}
+                        value={x.status}
+                        onChange={(e) =>
+                          void update("offer", x.id, e.target.value)
+                        }
+                      >
+                        <option value="open">Open</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="dismissed">Dismissed</option>
+                      </select>
+                    </article>
+                  ))}
+                </>
+              )}
+              {view === "reports" && (
+                <>
+                  <h3>Review reports</h3>
+                  {feedback.reviewReports.map((x) => (
+                    <article key={x.id}>
+                      <strong>
+                        {x.business_name} · {x.reason}
+                      </strong>
+                      <p>{x.review_text}</p>
+                      <p>{x.details}</p>
+                      <select
+                        aria-label={`Status for review report ${x.id}`}
+                        value={x.status}
+                        onChange={(e) =>
+                          void update("review", x.id, e.target.value)
+                        }
+                      >
+                        <option value="open">Open</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="dismissed">Dismissed</option>
+                      </select>
+                    </article>
+                  ))}
+                </>
+              )}
+              {view === "reports" && (
+                <>
+                  <h3>Review comments</h3>
+                  {feedback.comments.map((x) => (
+                    <article key={x.id}>
+                      <p>{x.body}</p>
+                      <small>{x.status}</small>
+                      {x.status !== "rejected" && (
+                        <div>
+                          {x.status === "pending" && (
+                            <button
+                              className="action action-gold"
+                              onClick={() =>
+                                void updateComment(x.id, "approved")
+                              }
+                            >
+                              Approve
+                            </button>
+                          )}
+                          <button
+                            className="action action-soft"
+                            onClick={() => void updateComment(x.id, "rejected")}
+                          >
+                            {x.status === "approved" ? "Remove" : "Reject"}
+                          </button>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </>
+              )}
+              {view === "messages" && (
+                <>
+                  <h3>Contact messages</h3>
+                  {feedback.contacts.map((x) => (
+                    <article key={x.id}>
+                      <strong>
+                        {x.name} · {x.email}
+                      </strong>
+                      <p>{x.message}</p>
+                    </article>
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </section>
+      )}
     </>
   )
 }

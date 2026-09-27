@@ -308,7 +308,7 @@ export async function activateDeal(
   const dealResult = await options.db.query<DealRow>(
     `SELECT id,business_id,channel,redemption_method,redemption_payload_encrypted,display_ttl_seconds,
     usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,starts_at,ends_at
-    FROM deals WHERE id=$1 AND published AND (starts_at IS NULL OR starts_at <= $2) AND (ends_at IS NULL OR ends_at > $2)`,
+    FROM deals WHERE id=$1 AND cta_type='use_deal' AND published AND (starts_at IS NULL OR starts_at <= $2) AND (ends_at IS NULL OR ends_at > $2)`,
     [options.dealId, now],
   )
   const deal = dealResult.rows[0]

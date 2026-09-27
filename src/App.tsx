@@ -2,10 +2,12 @@ import {
   useCallback,
   useEffect,
   useState,
+  useRef,
   type ChangeEvent,
   type FormEvent,
   type ReactNode,
 } from "react"
+
 import {
   BrowserRouter,
   Link,
@@ -18,6 +20,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom"
+
 import {
   ArrowRight,
   BookmarkSimple,
@@ -37,135 +40,293 @@ import {
   Tag,
   UserCircle,
 } from "@phosphor-icons/react"
+
 import { api, del, patch, post } from "./lib/api"
-import { AboutPage, AdminLaunchPanel, CityAlert, ContactPage, InformationPage, OfferReport, ReviewTools, SiteFooter, SuggestBusiness, UnsubscribePage } from './LaunchFeatures'
-import SpotlightCard from './reactbits/SpotlightCard'
-import StarBorder from './reactbits/StarBorder'
+
+import {
+  AboutPage,
+  AdminLaunchPanel,
+  CityAlert,
+  ContactPage,
+  InformationPage,
+  OfferReport,
+  ReviewTools,
+  SiteFooter,
+  SuggestBusiness,
+  UnsubscribePage,
+} from "./LaunchFeatures"
+
+import SpotlightCard from "./reactbits/SpotlightCard"
+
+import StarBorder from "./reactbits/StarBorder"
+
+import {
+  OFFER_CTA_LABELS,
+  isInterestCta,
+  type OfferCtaType,
+} from "../shared/offer-cta"
+
+import {
+  AdminOfferInterests,
+  OfferInterestDetail,
+  pendingOfferDestination,
+} from "./OfferInterests"
+
+import {
+  focusApiError,
+  useBusinessDraft,
+  validateAdminForm,
+} from "./lib/admin-form"
+
+import {
+  AdminHomeContent,
+  AdminNavigation,
+  ADMIN_SECTIONS,
+  AddLocationContent,
+  CategorySelect,
+  WeeklyHoursEditor,
+  readDraft,
+} from "./AdminWorkspace"
+
+import { withOpeningStatus, type WeeklyHours } from "../shared/business-hours"
+
+import { useOpeningStatus } from "./lib/business-hours"
 
 type SessionUser = {
   id: string
+
   personal_email: string
+
   first_name: string
+
   last_name: string
+
   city: string
+
   work_email: string | null
+
   verified: boolean
+
   verification_status?: string | null
+
   is_superadmin: boolean
 }
+
 type RefreshSession = () => Promise<SessionUser | null>
+
 type Profile = SessionUser & {
   mobile: string | null
+
   sms_consent: boolean
+
   email_updates: boolean
+
   educator_verified_at: string | null
+
   member_id: string
+
   estimated_savings_cents: number
+
   activation_count: number
 }
+
 type DealLocation = {
   id: string
+
   name?: string
+
   address: string
+
   latitude: number | null
+
   longitude: number | null
+
   radiusMeters?: number
+
   timezone?: string
 }
+
 type Activation = {
   id?: string
+
   activationType?: "verified_on_site" | "online_offer_access"
+
   status?: string
+
   businessName?: string
+
   locationName?: string
+
   locationAddress?: string
+
   offer?: string
+
   redemptionMethod?: "pos_button" | "coupon_code" | "barcode" | "cashier_instruction"
+
   redemptionValue?: string | null
+
   cashierInstruction?: string | null
+
   barcodeValue?: string | null
+
   expiresAt?: string
+
   serverTime?: string
+
   note?: string
+
   estimatedSavingsCents?: number
 }
+
 type Deal = {
+  opening_hours?: WeeklyHours | null
+
+  hours_timezone?: string
+
   id: string
+
   title: string
+
   description: string
+
   channel: "in_person" | "online"
+
   category: string
+
   restrictions: string
+
+  cta_type?: OfferCtaType
+
+  event_name?: string | null
+
+  interest_submitted?: boolean
+
   starts_at?: string | null
+
   ends_at?: string | null
+
   usage_limit_count?: number | null
+
   usage_limit_period?: "none" | "day" | "month" | "promo" | "lifetime"
+
   estimated_savings_cents: number
+
   featured: boolean
+
   sponsored: boolean
+
   giveaway: boolean
+
   business_id: string
+
   business_name: string
+
   business_description: string
+
   image_url: string
+
   website_url: string | null
+
   distance: string | null
+
   hours: string | null
+
   is_open: boolean | null
+
   address: string | null
+
   latitude: number | null
+
   longitude: number | null
+
   locations?: DealLocation[]
+
   redemptionMethod?: Activation["redemptionMethod"]
+
   redemptionValue?: string | null
+
   cashierInstruction?: string | null
+
   saved?: boolean
+
   used?: boolean
 }
+
 type Card = {
   member_id: string
+
   teacherName: string
+
   verified: boolean
+
   status: string
+
   walletStatus: "available" | "active" | "failed" | "pending" | "not_configured"
+
   walletDownloadUrl: string | null
 }
+
 type PublicBusinessReview = {
   id: string
+
   business_name: string
+
   rating: number
+
   review_text: string
+
   created_at: string
+
   comments?: { id: string; body: string; author: string; created_at: string }[]
 }
 
 const GOLD = "#D4AF37",
   INK = "#0F172A"
+
 const API_BASE = import.meta.env.VITE_API_URL || "/api"
+
 const money = (cents: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
     cents / 100,
   )
+
 const LOCAL_IMAGES: Record<string, string> = {
   "island-spice": "/Ember&Oak.jpeg",
+
   "glow-beauty": "/LuxeTheory.jpeg",
+
   "cafe-101": "/GoldenHourCoffee.jpeg",
+
   booknook: "/The Teacher Edit.jpeg",
+
   "teacher-tech": "/SundaySupply.jpeg",
+
   "district-social": "/DistrictSocial.jpeg",
+
   "lounge-social": "/Lounge&Social.jpeg",
+
   "skyline-auto-spa": "/SkylineAutoSpa.jpeg",
+
   "vibes-juice-co": "/VibesJuiceCo.jpeg",
 }
+
 const DISCOVER_PRIORITY: Record<string, number> = {
   "island-spice": 0,
+
   "cafe-101": 1,
 }
+
 const discoverRank = (deal: Deal) =>
   DISCOVER_PRIORITY[deal.business_id] ??
   (["Dining", "Coffee"].includes(deal.category) ? 2 : 3)
 
-function Logo({ light = false, to = "/deals" }: { light?: boolean; to?: string }) {
+function Logo({
+  light = false,
+  to = "/deals",
+}: {
+  light?: boolean
+  to?: string
+}) {
   return (
     <Link to={to} className="brand" aria-label="TeachersVIP home">
       <img className="brand-mark" src="/teachersvip-logo.png" alt="" />
@@ -183,7 +344,9 @@ function PublicHeader() {
       <Logo light to="/" />
       <nav aria-label="Public navigation">
         <Link to="/partner">For Businesses</Link>
-        <Link className="public-sign-in" to="/sign-in">Sign In</Link>
+        <Link className="public-sign-in" to="/sign-in">
+          Sign In
+        </Link>
       </nav>
     </header>
   )
@@ -197,28 +360,72 @@ function PublicHome() {
         <div className="public-hero-copy">
           <span className="public-eyebrow">Free educator membership</span>
           <h1>Local &amp; online deals for educators.</h1>
-          <p>Discover deals and giveaways from local and online businesses that appreciate educators.</p>
+          <p>
+            Discover deals and giveaways from local and online businesses that
+            appreciate educators.
+          </p>
           <div className="public-hero-actions">
-            <Link className="public-primary" to="/create-account">Join Free <ArrowRight size={18} weight="bold" /></Link>
-            <Link className="public-secondary" to="/sign-in">Sign In</Link>
+            <Link className="public-primary" to="/create-account">
+              Join Free <ArrowRight size={18} weight="bold" />
+            </Link>
+            <Link className="public-secondary" to="/sign-in">
+              Sign In
+            </Link>
           </div>
-          <Link className="public-business-link" to="/partner">Are you a business? <strong>Partner With Us</strong></Link>
+          <Link className="public-business-link" to="/partner">
+            Are you a business? <strong>Partner With Us</strong>
+          </Link>
         </div>
         <div className="public-offers">
           <h2 className="public-offers-heading">Preview Sample Offers</h2>
-          <div className="public-collage" role="region" tabIndex={0} aria-label="Preview sample educator offers">
-            <figure className="public-collage-main"><img src="/The Teacher Edit.jpeg" alt="20% off at The Teacher Edit" /></figure>
-            <figure><img src="/GoldenHourCoffee.jpeg" alt="Free pastry at Golden Hour Coffee" /></figure>
-            <figure><img src="/LuxeTheory.jpeg" alt="15% off at Luxe Theory" /></figure>
+          <div
+            className="public-collage"
+            role="region"
+            tabIndex={0}
+            aria-label="Preview sample educator offers"
+          >
+            <figure className="public-collage-main">
+              <img
+                src="/The Teacher Edit.jpeg"
+                alt="20% off at The Teacher Edit"
+              />
+            </figure>
+            <figure>
+              <img
+                src="/GoldenHourCoffee.jpeg"
+                alt="Free pastry at Golden Hour Coffee"
+              />
+            </figure>
+            <figure>
+              <img src="/LuxeTheory.jpeg" alt="15% off at Luxe Theory" />
+            </figure>
           </div>
         </div>
       </section>
       <section className="public-proof" aria-label="How TeachersVIP works">
-        <div><ShieldCheck size={30} weight="duotone" /><strong>Verify once</strong><span>Confirm the email address you want to use.</span></div>
-        <div><Tag size={30} weight="duotone" /><strong>Explore exclusive offers</strong><span>See the exact benefit before you visit.</span></div>
-        <div><MapPin size={30} weight="duotone" /><strong>Use deals simply</strong><span>Activate in-person deals on-site or reveal online promo codes.</span></div>
+        <div>
+          <ShieldCheck size={30} weight="duotone" />
+          <strong>Verify once</strong>
+          <span>Confirm the email address you want to use.</span>
+        </div>
+        <div>
+          <Tag size={30} weight="duotone" />
+          <strong>Explore exclusive offers</strong>
+          <span>See the exact benefit before you visit.</span>
+        </div>
+        <div>
+          <MapPin size={30} weight="duotone" />
+          <strong>Use deals simply</strong>
+          <span>
+            Activate in-person deals on-site or reveal online promo codes.
+          </span>
+        </div>
       </section>
-      <section className="public-about" id="about" aria-labelledby="about-title">
+      <section
+        className="public-about"
+        id="about"
+        aria-labelledby="about-title"
+      >
         <div className="public-section-intro">
           <span className="public-eyebrow">About TeachersVIP</span>
           <h2 id="about-title">Built around the educator community.</h2>
@@ -226,45 +433,73 @@ function PublicHome() {
             TeachersVIP is an educator-focused membership and marketing platform
             connecting verified educators with businesses that appreciate and
             want to reach the teacher community. Educators receive exclusive
-            offers and opportunities, while businesses gain visibility and
-            build meaningful relationships with educators.
+            offers and opportunities, while businesses gain visibility and build
+            meaningful relationships with educators.
           </p>
         </div>
         <div className="about-pillars">
-          <Link className="about-pillar" to="/create-account" aria-label="Educator Membership: explore exclusive educator offers">
+          <Link
+            className="about-pillar"
+            to="/create-account"
+            aria-label="Educator Membership: explore exclusive educator offers"
+          >
             <span>01</span>
             <h3>Educator Membership</h3>
-            <p>Verified educators discover exclusive local and online offers.</p>
-            <span className="about-pillar-action">Explore educator offers <ArrowRight size={15} /></span>
+            <p>
+              Verified educators discover exclusive local and online offers.
+            </p>
+            <span className="about-pillar-action">
+              Explore educator offers <ArrowRight size={15} />
+            </span>
           </Link>
-          <Link className="about-pillar" to="/partner" aria-label="Business Partnerships: learn about partnering with TeachersVIP">
+          <Link
+            className="about-pillar"
+            to="/partner"
+            aria-label="Business Partnerships: learn about partnering with TeachersVIP"
+          >
             <span>02</span>
             <h3>Business Partnerships</h3>
-            <p>Businesses reach educators through offers, marketing campaigns, events, sponsorships, and community initiatives.</p>
-            <span className="about-pillar-action">Partner with us <ArrowRight size={15} /></span>
+            <p>
+              Businesses reach educators through offers, marketing campaigns,
+              events, sponsorships, and community initiatives.
+            </p>
+            <span className="about-pillar-action">
+              Partner with us <ArrowRight size={15} />
+            </span>
           </Link>
-          <Link className="about-pillar" to="/creator-network" aria-label="Teacher Creator Network: join the creator interest form">
+          <Link
+            className="about-pillar"
+            to="/creator-network"
+            aria-label="Teacher Creator Network: join the creator interest form"
+          >
             <span>03</span>
             <h3>Teacher Creator Network</h3>
-            <p>Teacher creators connect with businesses for paid content, reviews, promotions, and campaign opportunities.</p>
-            <span className="about-pillar-action">Join the network <ArrowRight size={15} /></span>
+            <p>
+              Teacher creators connect with businesses for paid content,
+              reviews, promotions, and campaign opportunities.
+            </p>
+            <span className="about-pillar-action">
+              Join the network <ArrowRight size={15} />
+            </span>
           </Link>
         </div>
       </section>
       <PublicBusinessReviews />
-      <SpotlightCard className="creator-callout" ><section id="creator-network" aria-labelledby="creator-title">
-        <div>
-          <span className="public-eyebrow">Teacher Creator Network</span>
-          <h2 id="creator-title">Are You an Educator Who Creates Content?</h2>
-          <p>
-            Tell us about your content, audience, and the opportunities that
-            interest you. We are collecting creator interest for the network.
-          </p>
-        </div>
-        <StarBorder className="public-primary" to="/creator-network">
-          Join the Creator Network <ArrowRight size={18} weight="bold" />
-        </StarBorder>
-      </section></SpotlightCard>
+      <SpotlightCard className="creator-callout">
+        <section id="creator-network" aria-labelledby="creator-title">
+          <div>
+            <span className="public-eyebrow">Teacher Creator Network</span>
+            <h2 id="creator-title">Are You an Educator Who Creates Content?</h2>
+            <p>
+              Tell us about your content, audience, and the opportunities that
+              interest you. We are collecting creator interest for the network.
+            </p>
+          </div>
+          <StarBorder className="public-primary" to="/creator-network">
+            Join the Creator Network <ArrowRight size={18} weight="bold" />
+          </StarBorder>
+        </section>
+      </SpotlightCard>
       <SiteFooter />
     </main>
   )
@@ -272,30 +507,46 @@ function PublicHome() {
 
 function PublicBusinessReviews() {
   const [reviews, setReviews] = useState<PublicBusinessReview[]>([])
+
   useEffect(() => {
     api<{ reviews: PublicBusinessReview[] }>("/business-reviews")
+
       .then((result) => setReviews(result.reviews))
+
       .catch(() => setReviews([]))
   }, [])
+
   return (
-    <section className="public-reviews" id="business-reviews" aria-labelledby="reviews-title">
+    <section
+      className="public-reviews"
+      id="business-reviews"
+      aria-labelledby="reviews-title"
+    >
       <div>
         <span className="public-eyebrow">Business reviews</span>
         <h2 id="reviews-title">Educator feedback, shared with care.</h2>
         <p>
-          Feedback is from verified educators who activated an offer. It reflects
-          their experience with a participating business, not a completed purchase.
+          Feedback is from verified educators who activated an offer. It
+          reflects their experience with a participating business, not a
+          completed purchase.
         </p>
       </div>
       {reviews.length ? (
-        <div className="public-review-list" aria-label="Approved educator reviews">
+        <div
+          className="public-review-list"
+          aria-label="Approved educator reviews"
+        >
           {reviews.slice(0, 3).map((review) => (
             <article className="public-review-card" key={review.id}>
               <div>
                 <strong>{review.business_name}</strong>
                 <span aria-label={`${review.rating} out of 5 stars`}>
                   {Array.from({ length: 5 }, (_, index) => (
-                    <Star key={index} size={15} weight={index < review.rating ? "fill" : "regular"} />
+                    <Star
+                      key={index}
+                      size={15}
+                      weight={index < review.rating ? "fill" : "regular"}
+                    />
                   ))}
                 </span>
               </div>
@@ -305,7 +556,10 @@ function PublicBusinessReviews() {
           ))}
         </div>
       ) : (
-        <aside className="review-placeholder" aria-label="Business reviews awaiting approval">
+        <aside
+          className="review-placeholder"
+          aria-label="Business reviews awaiting approval"
+        >
           <Buildings size={30} weight="duotone" />
           <strong>Business Reviews</strong>
           <span>First reviews coming soon</span>
@@ -323,12 +577,35 @@ function PublicPartner() {
         <div>
           <span className="public-eyebrow">TeachersVIP partner network</span>
           <h1>Make educators your regulars.</h1>
-          <p>Choose your offer, participating locations, redemption method, and usage policy. TeachersVIP reviews every application before it goes live.</p>
+          <p>
+            Choose your offer, participating locations, redemption method, and
+            usage policy. TeachersVIP reviews every application before it goes
+            live.
+          </p>
         </div>
         <div className="partner-benefits">
-          <div><Buildings size={28} weight="duotone" /><strong>You stay in control</strong><span>Set the exact benefit, restrictions, and participating locations.</span></div>
-          <div><ShieldCheck size={28} weight="duotone" /><strong>Verified audience</strong><span>Offers are reserved for verified teachers and college professors.</span></div>
-          <div><Tag size={28} weight="duotone" /><strong>Clear reporting</strong><span>On-site activations are recorded without claiming a completed purchase.</span></div>
+          <div>
+            <Buildings size={28} weight="duotone" />
+            <strong>You stay in control</strong>
+            <span>
+              Set the exact benefit, restrictions, and participating locations.
+            </span>
+          </div>
+          <div>
+            <ShieldCheck size={28} weight="duotone" />
+            <strong>Verified audience</strong>
+            <span>
+              Offers are reserved for verified teachers and college professors.
+            </span>
+          </div>
+          <div>
+            <Tag size={28} weight="duotone" />
+            <strong>Clear reporting</strong>
+            <span>
+              On-site activations are recorded without claiming a completed
+              purchase.
+            </span>
+          </div>
         </div>
       </section>
       <StructuredPartner publicView />
@@ -339,100 +616,177 @@ function PublicPartner() {
 
 const CREATOR_PLATFORM_OPTIONS = [
   "Instagram",
+
   "TikTok",
+
   "YouTube",
+
   "Facebook",
+
   "Pinterest",
+
   "Podcast",
+
   "Blog",
+
   "Other",
 ]
+
 const CREATOR_NICHE_OPTIONS = [
   "Classroom ideas",
+
   "Teacher life",
+
   "Education",
+
   "Lifestyle",
+
   "Parenting & family",
+
   "Humour",
+
   "Wellness",
+
   "Other",
 ]
+
 const CREATOR_OPPORTUNITY_OPTIONS = [
   "Paid content",
+
   "Business reviews",
+
   "Promotions",
+
   "Product gifting",
+
   "Events",
+
   "Sponsorships",
+
   "Community initiatives",
 ]
+
 const CREATOR_FOLLOWER_RANGES = [
   "Under 1,000",
+
   "1,000–4,999",
+
   "5,000–24,999",
+
   "25,000–99,999",
+
   "100,000+",
 ]
 
 function CreatorNetworkPage({ user }: { user?: SessionUser }) {
   const [searchParams] = useSearchParams()
-  const [emailConfirmationPending, setEmailConfirmationPending] = useState(false),
+
+  const [emailConfirmationPending, setEmailConfirmationPending] =
+      useState(false),
     [confirmed, setConfirmed] = useState(false),
-    [developmentVerificationUrl, setDevelopmentVerificationUrl] = useState<string | null>(null),
+    [developmentVerificationUrl, setDevelopmentVerificationUrl] =
+      useState<string | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("")
+
   const verificationToken = searchParams.get("verify")
+
   const verifiedMember = Boolean(user?.verified && user.work_email)
+
   useEffect(() => {
     if (!verificationToken) return
+
     let active = true
+
     setBusy(true)
+
     setError("")
-    post<{ ok: boolean }>("/creator-network/verify", { token: verificationToken })
+
+    post<{ ok: boolean }>("/creator-network/verify", {
+      token: verificationToken,
+    })
+
       .then(() => {
         if (!active) return
+
         setConfirmed(true)
+
         window.history.replaceState(null, "", "/creator-network")
       })
+
       .catch((e) => active && setError((e as Error).message))
+
       .finally(() => active && setBusy(false))
+
     return () => {
       active = false
     }
   }, [verificationToken])
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     const form = new FormData(event.currentTarget)
+
     const platforms = form.getAll("platforms").map(String)
+
     const contentNiches = form.getAll("contentNiches").map(String)
+
     const opportunityInterests = form.getAll("opportunityInterests").map(String)
-    if (!platforms.length || !contentNiches.length || !opportunityInterests.length) {
-      setError("Choose at least one platform, content niche, and opportunity interest.")
+
+    if (
+      !platforms.length ||
+      !contentNiches.length ||
+      !opportunityInterests.length
+    ) {
+      setError(
+        "Choose at least one platform, content niche, and opportunity interest.",
+      )
+
       return
     }
+
     setBusy(true)
+
     setError("")
+
     try {
       const result = await post<{
         accepted: boolean
+
         emailVerificationRequired: boolean
+
         verificationUrl?: string
       }>("/creator-network", {
         fullName: form.get("fullName"),
+
         city: form.get("city"),
-        educatorEmail: verifiedMember ? user?.work_email : form.get("educatorEmail"),
+
+        educatorEmail: verifiedMember
+          ? user?.work_email
+          : form.get("educatorEmail"),
+
         contactInformation: form.get("contactInformation"),
+
         socialHandles: form.get("socialHandles"),
+
         platforms,
+
         followerRange: form.get("followerRange"),
+
         contentNiches,
+
         sampleContent: form.get("sampleContent"),
+
         opportunityInterests,
+
         contactConsent: form.get("contactConsent") === "on",
       })
+
       if (result.accepted) setConfirmed(true)
       else {
         setDevelopmentVerificationUrl(result.verificationUrl || null)
+
         setEmailConfirmationPending(true)
       }
     } catch (e) {
@@ -441,6 +795,7 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
       setBusy(false)
     }
   }
+
   return (
     <main className="public-site creator-network-site">
       {!user && <PublicHeader />}
@@ -512,20 +867,39 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
                     defaultValue={verifiedMember ? user?.work_email || "" : ""}
                     readOnly={verifiedMember}
                   />
-                  {verifiedMember && <small className="field-note">Verified through your TeachersVIP membership; no additional email confirmation is needed.</small>}
+                  {verifiedMember && (
+                    <small className="field-note">
+                      Verified through your TeachersVIP membership; no
+                      additional email confirmation is needed.
+                    </small>
+                  )}
                 </div>
-                <Field label="Contact information" name="contactInformation" required placeholder="Phone, WhatsApp, or preferred contact" />
+                <Field
+                  label="Contact information"
+                  name="contactInformation"
+                  required
+                  placeholder="Phone, WhatsApp, or preferred contact"
+                />
               </div>
               <label className="field">
                 <span>Social handles</span>
-                <textarea name="socialHandles" required minLength={2} placeholder="@yourhandle, profile links, or channel names" />
+                <textarea
+                  name="socialHandles"
+                  required
+                  minLength={2}
+                  placeholder="@yourhandle, profile links, or channel names"
+                />
               </label>
               <fieldset className="creator-fieldset">
                 <legend>Platforms</legend>
                 <div className="creator-choice-grid">
                   {CREATOR_PLATFORM_OPTIONS.map((platform) => (
                     <label className="creator-choice" key={platform}>
-                      <input type="checkbox" name="platforms" value={platform} />
+                      <input
+                        type="checkbox"
+                        name="platforms"
+                        value={platform}
+                      />
                       <span>{platform}</span>
                     </label>
                   ))}
@@ -534,8 +908,14 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
               <label className="field">
                 <span>Follower range</span>
                 <select name="followerRange" required defaultValue="">
-                  <option value="" disabled>Select your audience size</option>
-                  {CREATOR_FOLLOWER_RANGES.map((range) => <option key={range} value={range}>{range}</option>)}
+                  <option value="" disabled>
+                    Select your audience size
+                  </option>
+                  {CREATOR_FOLLOWER_RANGES.map((range) => (
+                    <option key={range} value={range}>
+                      {range}
+                    </option>
+                  ))}
                 </select>
               </label>
               <fieldset className="creator-fieldset">
@@ -543,7 +923,11 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
                 <div className="creator-choice-grid">
                   {CREATOR_NICHE_OPTIONS.map((niche) => (
                     <label className="creator-choice" key={niche}>
-                      <input type="checkbox" name="contentNiches" value={niche} />
+                      <input
+                        type="checkbox"
+                        name="contentNiches"
+                        value={niche}
+                      />
                       <span>{niche}</span>
                     </label>
                   ))}
@@ -551,14 +935,23 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
               </fieldset>
               <label className="field">
                 <span>Sample content</span>
-                <textarea name="sampleContent" required minLength={5} placeholder="Share links to posts, videos, a portfolio, or examples of your work" />
+                <textarea
+                  name="sampleContent"
+                  required
+                  minLength={5}
+                  placeholder="Share links to posts, videos, a portfolio, or examples of your work"
+                />
               </label>
               <fieldset className="creator-fieldset">
                 <legend>What opportunities interest you?</legend>
                 <div className="creator-choice-grid">
                   {CREATOR_OPPORTUNITY_OPTIONS.map((opportunity) => (
                     <label className="creator-choice" key={opportunity}>
-                      <input type="checkbox" name="opportunityInterests" value={opportunity} />
+                      <input
+                        type="checkbox"
+                        name="opportunityInterests"
+                        value={opportunity}
+                      />
                       <span>{opportunity}</span>
                     </label>
                   ))}
@@ -566,7 +959,10 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
               </fieldset>
               <label className="creator-consent">
                 <input type="checkbox" name="contactConsent" required />
-                <span>I agree that TeachersVIP may store these details and contact me about Creator Network opportunities.</span>
+                <span>
+                  I agree that TeachersVIP may store these details and contact
+                  me about Creator Network opportunities.
+                </span>
               </label>
               {error && <Notice kind="error">{error}</Notice>}
               <Button type="submit" disabled={busy}>
@@ -586,17 +982,26 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
     </main>
   )
 }
+
 function Button({
   children,
+
   variant = "gold",
+
   type = "button",
+
   disabled,
+
   onClick,
 }: {
   children: ReactNode
+
   variant?: "gold" | "navy" | "soft" | "danger"
+
   type?: "button" | "submit"
+
   disabled?: boolean
+
   onClick?: () => void
 }) {
   return (
@@ -610,33 +1015,66 @@ function Button({
     </button>
   )
 }
+
 function Field({
   label,
+
   name,
+
   type = "text",
+
   required,
+
   defaultValue,
+
   placeholder,
+
+  pattern,
+
+  maxLength,
+
   minLength,
+
   min,
+
   max,
+
   step,
+
   readOnly = false,
+
   disabled = false,
+
   inputMode,
 }: {
   label: string
+
   name: string
+
   type?: string
+
   required?: boolean
+
   defaultValue?: string
+
   placeholder?: string
+
+  pattern?: string
+
+  maxLength?: number
+
   minLength?: number
+
   min?: number
+
   max?: number
+
   step?: string
+
   readOnly?: boolean
+
   disabled?: boolean
+
   inputMode?: "numeric" | "text" | "email" | "tel" | "url"
 }) {
   return (
@@ -648,6 +1086,8 @@ function Field({
         required={required}
         defaultValue={defaultValue}
         placeholder={placeholder}
+        pattern={pattern}
+        maxLength={maxLength}
         minLength={minLength}
         min={min}
         max={max}
@@ -664,11 +1104,14 @@ function Field({
     </label>
   )
 }
+
 function Notice({
   kind = "info",
+
   children,
 }: {
   kind?: "info" | "error" | "success"
+
   children: ReactNode
 }) {
   return (
@@ -680,13 +1123,18 @@ function Notice({
     </div>
   )
 }
+
 function AuthFrame({
   children,
+
   title,
+
   intro,
 }: {
   children: ReactNode
+
   title: string
+
   intro: string
 }) {
   return (
@@ -705,51 +1153,85 @@ function AuthFrame({
 
 type CitySearchResult = {
   id?: string
+
   label?: string
+
   name?: string
+
   displayName?: string
+
   display_name?: string
+
   city?: string
+
   state?: string
+
   timezone?: string
+
   latitude?: number
+
   longitude?: number
+
   provider?: "mapbox" | "open-meteo" | "local"
+
   country?: string
+
   address?: {
     city?: string
+
     town?: string
+
     village?: string
+
     municipality?: string
+
     state?: string
+
     country?: string
   }
 }
 
 function CityAutocomplete({
   value,
+
   onChange,
+
   onSelect,
+
   kind = "city",
+
   label = "City and province/state",
+
   placeholder = "Start typing your city",
+
   inputName = "city",
+
   idPrefix = "city",
 }: {
   value: string
+
   onChange: (value: string) => void
+
   onSelect?: (result: CitySearchResult) => void
+
   kind?: "city" | "address"
+
   label?: string
+
   placeholder?: string
+
   inputName?: string
+
   idPrefix?: string
 }) {
   const [open, setOpen] = useState(false),
-    [remoteSuggestions, setRemoteSuggestions] = useState<CitySearchResult[]>([]),
+    [remoteSuggestions, setRemoteSuggestions] = useState<CitySearchResult[]>(
+      [],
+    ),
     [searching, setSearching] = useState(false),
     [activeIndex, setActiveIndex] = useState(-1),
     [message, setMessage] = useState("")
+
   const suggestions = remoteSuggestions.filter(
     (suggestion, index, all) =>
       Boolean(suggestion.label) &&
@@ -760,64 +1242,97 @@ function CityAutocomplete({
 
   useEffect(() => {
     const query = value.trim()
+
     if (query.length < 1) {
       setRemoteSuggestions([])
+
       setSearching(false)
+
       setMessage("")
+
       return
     }
+
     const controller = new AbortController()
+
     const timer = window.setTimeout(async () => {
       setSearching(true)
+
       try {
         const response = await fetch(
           `${API_BASE}/cities?q=${encodeURIComponent(query)}&kind=${kind}`,
+
           {
             signal: controller.signal,
+
             headers: { Accept: "application/json" },
           },
         )
+
         if (!response.ok) throw new Error("City search failed")
+
         const payload = (await response.json()) as {
           cities?: CitySearchResult[]
         }
+
         const results = payload.cities || []
+
         const normalizedResults = results
+
           .map((result) => {
             if (result.label) return result
+
             if (result.name)
               return {
                 ...result,
+
                 label:
                   result.displayName ||
                   [result.name, result.state, result.country]
+
                     .filter(Boolean)
+
                     .join(", "),
               }
+
             const address = result.address || {}
+
             const city =
               address.city ||
               address.town ||
               address.village ||
               address.municipality
+
             if (!city)
               return {
                 ...result,
+
                 label: result.display_name
+
                   ?.split(",")
+
                   .slice(0, 3)
+
                   .join(",")
+
                   .trim(),
               }
+
             return {
               ...result,
+
               label: [city, address.state, address.country]
+
                 .filter(Boolean)
+
                 .join(", "),
             }
           })
+
           .filter((result): result is CitySearchResult => Boolean(result.label))
+
         setRemoteSuggestions(normalizedResults)
+
         setMessage(
           normalizedResults.length
             ? ""
@@ -828,6 +1343,7 @@ function CityAutocomplete({
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           setRemoteSuggestions([])
+
           setMessage(
             "City search is unavailable. You can continue with your city as entered.",
           )
@@ -836,19 +1352,27 @@ function CityAutocomplete({
         if (!controller.signal.aborted) setSearching(false)
       }
     }, 180)
+
     return () => {
       window.clearTimeout(timer)
+
       controller.abort()
     }
   }, [kind, value])
 
   const choose = (result: CitySearchResult) => {
-    const selectedLabel = result.label || result.displayName || result.name || ""
+    const selectedLabel =
+      result.label || result.displayName || result.name || ""
+
     onChange(selectedLabel)
+
     onSelect?.(result)
+
     setOpen(false)
+
     setActiveIndex(-1)
   }
+
   return (
     <div className="city-autocomplete">
       <label className="field">
@@ -871,28 +1395,38 @@ function CityAutocomplete({
           onBlur={() => window.setTimeout(() => setOpen(false), 160)}
           onChange={(event) => {
             onChange(event.target.value)
+
             setOpen(true)
+
             setActiveIndex(-1)
           }}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
               event.preventDefault()
+
               setOpen(true)
+
               setActiveIndex((index) =>
                 Math.min(index + 1, suggestions.length - 1),
               )
             } else if (event.key === "ArrowUp") {
               event.preventDefault()
+
               setActiveIndex((index) => Math.max(index - 1, 0))
             } else if (event.key === "Enter" && activeIndex >= 0) {
               event.preventDefault()
+
               choose(suggestions[activeIndex])
             } else if (event.key === "Escape") setOpen(false)
           }}
         />
       </label>
       {open && (suggestions.length > 0 || searching || message) && (
-        <div id={`${idPrefix}-suggestions`} className="city-suggestions" role="listbox">
+        <div
+          id={`${idPrefix}-suggestions`}
+          className="city-suggestions"
+          role="listbox"
+        >
           {searching && (
             <span className="city-searching">
               Searching {kind === "address" ? "addresses" : "cities"}…
@@ -914,9 +1448,9 @@ function CityAutocomplete({
           {!searching && message && (
             <span className="city-searching">{message}</span>
           )}
-          {suggestions.some((suggestion) => suggestion.provider === "mapbox") && (
-            <span className="city-provider">Suggestions by Mapbox</span>
-          )}
+          {suggestions.some(
+            (suggestion) => suggestion.provider === "mapbox",
+          ) && <span className="city-provider">Suggestions by Mapbox</span>}
         </div>
       )}
     </div>
@@ -927,31 +1461,49 @@ function Register({ refresh }: { refresh: RefreshSession }) {
   const [city, setCity] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setBusy(true)
+
     setError("")
+
     const data = new FormData(event.currentTarget)
+
     try {
       const result = await post<{ verificationUrl?: string }>(
         "/auth/register",
+
         {
           firstName: data.get("firstName"),
+
           lastName: data.get("lastName"),
+
           workEmail: data.get("workEmail"),
+
           schoolEmail: data.get("workEmail"),
+
           role: data.get("role"),
+
           roleAttestation: data.get("roleAttestation") === "on",
+
           mobile: data.get("mobile") || undefined,
+
           city,
+
           password: data.get("password"),
+
           smsConsent: false,
         },
       )
+
       await refresh()
+
       const devLink = result.verificationUrl
         ? `?devVerificationUrl=${encodeURIComponent(result.verificationUrl)}`
         : ""
+
       window.location.assign(`/verify${devLink}`)
     } catch (e) {
       setError((e as Error).message)
@@ -959,6 +1511,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
       setBusy(false)
     }
   }
+
   return (
     <AuthFrame
       title="Welcome, Educators"
@@ -969,12 +1522,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           <Field label="First name" name="firstName" required minLength={2} />
           <Field label="Last name" name="lastName" required minLength={2} />
         </div>
-        <Field
-          label="Email address"
-          name="workEmail"
-          type="email"
-          required
-        />
+        <Field label="Email address" name="workEmail" type="email" required />
         <label className="field">
           <span>Your role</span>
           <select name="role" required defaultValue="">
@@ -1016,26 +1564,41 @@ function AdminRegister({ refresh }: { refresh: RefreshSession }) {
   const [available, setAvailable] = useState<boolean | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
+
   useEffect(() => {
     api<{ available: boolean }>("/auth/admin-registration-status")
+
       .then((result) => setAvailable(result.available))
+
       .catch(() => setAvailable(false))
   }, [])
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setBusy(true)
+
     setError("")
+
     const data = new FormData(event.currentTarget)
+
     try {
       await post("/auth/admin-register", {
         pin: data.get("pin"),
+
         firstName: data.get("firstName"),
+
         lastName: data.get("lastName"),
+
         email: data.get("email"),
+
         password: data.get("password"),
+
         city: data.get("city"),
       })
+
       await refresh()
+
       window.location.assign("/admin")
     } catch (e) {
       setError((e as Error).message)
@@ -1043,6 +1606,7 @@ function AdminRegister({ refresh }: { refresh: RefreshSession }) {
       setBusy(false)
     }
   }
+
   if (available === null)
     return (
       <AuthFrame
@@ -1055,7 +1619,9 @@ function AdminRegister({ refresh }: { refresh: RefreshSession }) {
         </div>
       </AuthFrame>
     )
+
   if (!available) return <Navigate to="/create-account" replace />
+
   return (
     <AuthFrame
       title="Set Up Superadmin"
@@ -1104,23 +1670,31 @@ function SignIn({ refresh }: { refresh: RefreshSession }) {
   const navigate = useNavigate(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setBusy(true)
+
     const data = new FormData(event.currentTarget)
+
     try {
       await post("/auth/sign-in", {
         email: data.get("email"),
+
         password: data.get("password"),
       })
+
       const nextUser = await refresh()
-      navigate(nextUser?.verified ? "/deals" : "/verify")
+
+      navigate(nextUser?.verified ? pendingOfferDestination() : "/verify")
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setBusy(false)
     }
   }
+
   return (
     <AuthFrame
       title="Welcome Back"
@@ -1150,18 +1724,25 @@ function ForgotPassword() {
     [resetUrl, setResetUrl] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setBusy(true)
+
     setError("")
+
     try {
       const result = await post<{ resetUrl?: string }>(
         "/auth/forgot-password",
+
         { email },
       )
+
       setMessage(
         "If an account exists for that email, a reset link has been sent.",
       )
+
       setResetUrl(result.resetUrl || "")
     } catch (e) {
       setError((e as Error).message)
@@ -1169,6 +1750,7 @@ function ForgotPassword() {
       setBusy(false)
     }
   }
+
   return (
     <AuthFrame
       title="Reset Password"
@@ -1208,16 +1790,23 @@ function ResetPassword() {
     navigate = useNavigate(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setBusy(true)
+
     setError("")
+
     const d = new FormData(event.currentTarget)
+
     try {
       await post("/auth/reset-password", {
         token: params.get("token"),
+
         password: d.get("password"),
       })
+
       navigate("/sign-in")
     } catch (e) {
       setError((e as Error).message)
@@ -1225,6 +1814,7 @@ function ResetPassword() {
       setBusy(false)
     }
   }
+
   return (
     <AuthFrame
       title="Choose a New Password"
@@ -1252,9 +1842,11 @@ function ResetPassword() {
 
 function Verify({
   user,
+
   refresh,
 }: {
   user: SessionUser
+
   refresh: RefreshSession
 }) {
   const [params] = useSearchParams(),
@@ -1262,40 +1854,54 @@ function Verify({
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [devUrl, setDevUrl] = useState(params.get("devVerificationUrl") || "")
+
   useEffect(() => {
     const token = params.get("token")
+
     if (!token) return
+
     post<{ status: "verified" | "manual_review" }>("/verification/confirm", {
       token,
     })
+
       .then(async (result) => {
         const nextUser = await refresh()
+
         if (result.status === "verified" && nextUser?.verified) {
           setMessage("Your email address is verified.")
-          setTimeout(() => navigate("/deals"), 900)
+
+          setTimeout(() => navigate(pendingOfferDestination()), 900)
         } else
           setMessage(
             "Your email is confirmed. Your educator eligibility is now in manual review; we’ll notify you when a decision is made.",
           )
       })
+
       .catch((e) => setError(e.message))
   }, [params, navigate, refresh])
+
   const send = async (event: FormEvent) => {
     event.preventDefault()
+
     setError("")
+
     try {
-      const result = await post<{ ok: boolean, verificationUrl?: string }>(
+      const result = await post<{ ok: boolean; verificationUrl?: string }>(
         "/verification/send",
+
         {},
       )
+
       setMessage(
         "A new verification link was sent to your email address.",
       )
+
       setDevUrl(result.verificationUrl || "")
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   return (
     <Page title="Verify Your Email Address" narrow>
       <div className="verify-panel">
@@ -1349,22 +1955,29 @@ function Verify({
 function PublicVerify() {
   const [params] = useSearchParams(),
     [error, setError] = useState("")
+
   const token = params.get("token")
+
   useEffect(() => {
     if (!token) {
       setError("This verification link is incomplete.")
+
       return
     }
+
     post<{ status: "verified" | "manual_review" }>("/verification/confirm", {
       token,
     })
+
       .then((result) =>
         window.location.replace(
-          result.status === "verified" ? "/deals" : "/verify",
+          result.status === "verified" ? pendingOfferDestination() : "/verify",
         ),
       )
+
       .catch((e) => setError(e.message))
   }, [token])
+
   return (
     <AuthFrame
       title="Verifying Your Email"
@@ -1390,20 +2003,28 @@ function PublicVerify() {
 
 function Shell({
   user,
+
   onSignOut,
+
   children,
 }: {
   user: SessionUser
+
   onSignOut: () => Promise<void>
+
   children: ReactNode
 }) {
   const location = useLocation(),
     links = [
       { to: "/deals", label: "Discover", Icon: Compass },
+
       { to: "/saved", label: "Saved", Icon: BookmarkSimple },
+
       { to: "/vip-card", label: "VIP Card", Icon: IdentificationCard },
+
       { to: "/profile", label: "Profile", Icon: UserCircle },
     ]
+
   return (
     <div className="app-shell">
       <aside className="desktop-nav">
@@ -1484,15 +2105,22 @@ function Shell({
     </div>
   )
 }
+
 function Page({
   title,
+
   children,
+
   narrow = false,
+
   action,
 }: {
   title: string
+
   children: ReactNode
+
   narrow?: boolean
+
   action?: ReactNode
 }) {
   return (
@@ -1511,18 +2139,22 @@ function Page({
 
 function DealCard({
   deal,
+
   onSave,
+
   onReview,
 }: {
   deal: Deal
+
   onSave: (deal: Deal) => void
+
   onReview: (deal: Deal) => void
 }) {
+  const isOpen = useOpeningStatus(deal)
+
   return (
     <article className={`deal-card ${deal.used ? "deal-card-used" : ""}`}>
-      <Link
-        to={`/deals/${deal.id}`}
-      >
+      <Link to={`/deals/${deal.id}`}>
         <div className="deal-image">
           <img
             src={
@@ -1557,6 +2189,11 @@ function DealCard({
           <strong>
             {deal.giveaway ? "Enter to Win a Classroom Toolkit" : deal.title}
           </strong>
+          {isInterestCta(deal.cta_type) && (
+            <span className="interest-card-cta">
+              {OFFER_CTA_LABELS[deal.cta_type!]}
+            </span>
+          )}
           <p>
             {deal.used
               ? "Previously activated. Check the offer limits before using it again."
@@ -1571,10 +2208,14 @@ function DealCard({
                   <MapPin size={15} weight="fill" />
                   {deal.distance || deal.address || "Local offer"}
                 </span>
-                {deal.hours && (
-                  <span className={deal.is_open === false ? "closed" : "open"}>
+                {(deal.hours || deal.opening_hours) && (
+                  <span className={isOpen === false ? "closed" : "open"}>
                     <Clock size={15} weight="fill" />
-                    {deal.hours}
+                    {deal.opening_hours
+                      ? isOpen
+                        ? "Open now"
+                        : "Closed now"
+                      : deal.hours}
                   </span>
                 )}
               </>
@@ -1587,10 +2228,7 @@ function DealCard({
           </div>
         </div>
       </Link>
-      <button
-        className="deal-review-link"
-        onClick={() => onReview(deal)}
-      >
+      <button className="deal-review-link" onClick={() => onReview(deal)}>
         <Star size={14} /> Reviews & feedback
       </button>
       <button
@@ -1606,36 +2244,52 @@ function DealCard({
 
 function Discover({ user }: { user: SessionUser }) {
   const navigate = useNavigate()
+
   const [deals, setDeals] = useState<Deal[]>([]),
     [q, setQ] = useState(""),
     [category, setCategory] = useState("All"),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true)
+
   const load = () =>
     api<{ deals: Deal[] }>("/deals")
+
       .then((r) => {
         setDeals(r.deals)
+
         r.deals.forEach(
           (d) =>
             void post("/analytics/events", {
               eventType: "business_listing_view",
+
               businessId: d.business_id,
+
               dealId: d.id,
+
               idempotencyKey: `view-${d.id}-${new Date().toISOString().slice(0, 10)}`,
             }),
         )
       })
+
       .catch((e) => setError(e.message))
+
       .finally(() => setLoading(false))
+
   useEffect(() => {
     void load()
   }, [])
+
   const categories = [
       "All",
+
       "Food & Drink",
+
       "Shopping",
+
       "Services",
+
       "Online",
+
       "Win",
     ],
     shown = deals.filter((d) => {
@@ -1648,6 +2302,7 @@ function Discover({ user }: { user: SessionUser }) {
             : d.category === "Retail"
               ? "Shopping"
               : d.category
+
       return (
         (category === "All" || mapped === category) &&
         `${d.title} ${d.business_name}`.toLowerCase().includes(q.toLowerCase())
@@ -1656,11 +2311,13 @@ function Discover({ user }: { user: SessionUser }) {
     orderedDeals = [...shown].sort((a, b) => discoverRank(a) - discoverRank(b)),
     activeDeals = orderedDeals.filter((d) => !d.used),
     activatedDeals = orderedDeals.filter((d) => d.used)
+
   const toggle = async (deal: Deal) => {
     try {
       deal.saved
         ? await del(`/deals/${deal.id}/save`)
         : await post(`/deals/${deal.id}/save`)
+
       setDeals((v) =>
         v.map((d) => (d.id === deal.id ? { ...d, saved: !d.saved } : d)),
       )
@@ -1668,6 +2325,7 @@ function Discover({ user }: { user: SessionUser }) {
       setError((e as Error).message)
     }
   }
+
   return (
     <Page title="Discover Deals">
       <section className="hero">
@@ -1708,7 +2366,7 @@ function Discover({ user }: { user: SessionUser }) {
         <DealSkeletons />
       ) : (
         <>
-        {activeDeals.length > 0 && (
+          {activeDeals.length > 0 && (
             <section className="deal-section">
               <div className="section-heading">
                 <h2>Available Deals</h2>
@@ -1720,7 +2378,9 @@ function Discover({ user }: { user: SessionUser }) {
                     key={d.id}
                     deal={d}
                     onSave={toggle}
-                    onReview={(deal) => navigate(`/deals/${deal.id}#business-reviews`)}
+                    onReview={(deal) =>
+                      navigate(`/deals/${deal.id}#business-reviews`)
+                    }
                   />
                 ))}
               </section>
@@ -1738,7 +2398,9 @@ function Discover({ user }: { user: SessionUser }) {
                     key={d.id}
                     deal={d}
                     onSave={toggle}
-                    onReview={(deal) => navigate(`/deals/${deal.id}#business-reviews`)}
+                    onReview={(deal) =>
+                      navigate(`/deals/${deal.id}#business-reviews`)
+                    }
                   />
                 ))}
               </section>
@@ -1752,7 +2414,19 @@ function Discover({ user }: { user: SessionUser }) {
           text="Try a different search or category."
         />
       )}
-      {!loading && !deals.some(deal => deal.channel === 'in_person' && deal.address?.toLowerCase().includes(`, ${user.city.split(',')[0].trim().toLowerCase()},`)) && <CityAlert city={user.city.split(',')[0].trim()} email={user.personal_email} />}
+      {!loading &&
+        !deals.some(
+          (deal) =>
+            deal.channel === "in_person" &&
+            deal.address
+              ?.toLowerCase()
+              .includes(`, ${user.city.split(",")[0].trim().toLowerCase()},`),
+        ) && (
+          <CityAlert
+            city={user.city.split(",")[0].trim()}
+            email={user.personal_email}
+          />
+        )}
       <SuggestBusiness city={user.city} />
     </Page>
   )
@@ -1760,72 +2434,125 @@ function Discover({ user }: { user: SessionUser }) {
 
 const CODE39: Record<string, string> = {
   "0": "nnnwwnwnn",
+
   "1": "wnnwnnnnw",
+
   "2": "nnwwnnnnw",
+
   "3": "wnwwnnnnn",
+
   "4": "nnnwwnnnw",
+
   "5": "wnnwwnnnn",
+
   "6": "nnwwwnnnn",
+
   "7": "nnnwnnwnw",
+
   "8": "wnnwnnwnn",
+
   "9": "nnwwnnwnn",
+
   A: "wnnnnwnnw",
+
   B: "nnwnnwnnw",
+
   C: "wnwnnwnnn",
+
   D: "nnnnwwnnw",
+
   E: "wnnnwwnnn",
+
   F: "nnwnwwnnn",
+
   G: "nnnnnwwnw",
+
   H: "wnnnnwwnn",
+
   I: "nnwnnwwnn",
+
   J: "nnnnwwwnn",
+
   K: "wnnnnnnww",
+
   L: "nnwnnnnww",
+
   M: "wnwnnnnwn",
+
   N: "nnnnwnnww",
+
   O: "wnnnwnnwn",
+
   P: "nnwnwnnwn",
+
   Q: "nnnnnnwww",
+
   R: "wnnnnnwwn",
+
   S: "nnwnnnwwn",
+
   T: "nnnnwnwwn",
+
   U: "wwnnnnnnw",
+
   V: "nwwnnnnnw",
+
   W: "wwwnnnnnn",
+
   X: "nwnnwnnnw",
+
   Y: "wwnnwnnnn",
+
   Z: "nwwnwnnnn",
+
   "-": "nwnnnnwnw",
+
   ".": "wwnnnnwnn",
+
   " ": "nwwnnnwnn",
+
   $: "nwnwnwnnn",
+
   "/": "nwnwnnnwn",
+
   "+": "nwnnnwnwn",
+
   "%": "nnnwnwnwn",
+
   "*": "nwnnwnwnn",
 }
 
 function BarcodeDisplay({ value }: { value: string }) {
   const encodedValue = value.toUpperCase()
+
   if (![...encodedValue].every((character) => CODE39[character]))
     return <strong>{value}</strong>
-  const modules: { x: number, width: number, bar: boolean }[] = []
+
+  const modules: { x: number; width: number; bar: boolean }[] = []
+
   let x = 10
+
   for (const character of `*${encodedValue}*`) {
     CODE39[character].split("").forEach((widthCode, index) => {
       const width = widthCode === "w" ? 5 : 2
+
       modules.push({ x, width, bar: index % 2 === 0 })
+
       x += width
     })
+
     x += 2
   }
+
   return (
     <div className="barcode-display" aria-label={`Barcode ${value}`}>
       <svg viewBox={`0 0 ${x + 8} 72`} role="img" preserveAspectRatio="none">
         <title>{`Barcode ${value}`}</title>
         <rect width={x + 8} height="72" fill="#fff" />
         {modules
+
           .filter((module) => module.bar)
+
           .map((module, index) => (
             <rect
               key={index}
@@ -1842,22 +2569,36 @@ function BarcodeDisplay({ value }: { value: string }) {
   )
 }
 
-function BusinessReviewForm({ businessId, dealId }: { businessId: string; dealId: string }) {
+function BusinessReviewForm({
+  businessId,
+  dealId,
+}: {
+  businessId: string
+  dealId: string
+}) {
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [sent, setSent] = useState(false),
     [error, setError] = useState("")
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     const form = new FormData(event.currentTarget)
+
     setBusy(true)
+
     setError("")
+
     try {
       await post(`/businesses/${businessId}/reviews`, {
         rating: Number(form.get("rating")),
+
         reviewText: form.get("reviewText"),
+
         dealId,
       })
+
       setSent(true)
     } catch (e) {
       setError((e as Error).message)
@@ -1865,6 +2606,7 @@ function BusinessReviewForm({ businessId, dealId }: { businessId: string; dealId
       setBusy(false)
     }
   }
+
   if (sent)
     return (
       <p className="review-submission-confirmation" role="status">
@@ -1872,85 +2614,144 @@ function BusinessReviewForm({ businessId, dealId }: { businessId: string; dealId
         as a completed purchase.
       </p>
     )
+
   if (!open)
     return (
-      <button type="button" className="action action-soft review-trigger" onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className="action action-soft review-trigger"
+        onClick={() => setOpen(true)}
+      >
         Leave business feedback
       </button>
     )
+
   return (
     <form className="business-review-form" onSubmit={submit}>
       <label className="field">
         <span>Your experience</span>
         <select name="rating" defaultValue="5" required>
           {[5, 4, 3, 2, 1].map((rating) => (
-            <option key={rating} value={rating}>{rating} out of 5</option>
+            <option key={rating} value={rating}>
+              {rating} out of 5
+            </option>
           ))}
         </select>
       </label>
       <label className="field">
         <span>Feedback</span>
-        <textarea name="reviewText" required minLength={10} maxLength={1500} placeholder="Share your experience with this participating business." />
+        <textarea
+          name="reviewText"
+          required
+          minLength={10}
+          maxLength={1500}
+          placeholder="Share your experience with this participating business."
+        />
       </label>
-      <p>You must have activated this offer. Feedback is reviewed before it appears publicly and does not confirm a purchase.</p>
+      <p>
+        You must have activated this offer. Feedback is reviewed before it
+        appears publicly and does not confirm a purchase.
+      </p>
       {error && <Notice kind="error">{error}</Notice>}
       <div className="business-review-actions">
-        <Button type="submit" disabled={busy}>{busy ? "Submitting feedback…" : "Submit for review"}</Button>
-        <button className="action action-soft" type="button" onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
+        <Button type="submit" disabled={busy}>
+          {busy ? "Submitting feedback…" : "Submit for review"}
+        </Button>
+        <button
+          className="action action-soft"
+          type="button"
+          onClick={() => setOpen(false)}
+          disabled={busy}
+        >
+          Cancel
+        </button>
       </div>
     </form>
   )
 }
 
-function BusinessReviews({ businessId, businessName }: { businessId: string, businessName: string }) {
+function BusinessReviews({
+  businessId,
+  businessName,
+}: {
+  businessId: string
+  businessName: string
+}) {
   const [reviews, setReviews] = useState<PublicBusinessReview[]>([]),
     [error, setError] = useState("")
+
   useEffect(() => {
-    api<{ reviews: PublicBusinessReview[] }>(`/businesses/${encodeURIComponent(businessId)}/reviews`)
+    api<{ reviews: PublicBusinessReview[] }>(
+      `/businesses/${encodeURIComponent(businessId)}/reviews`,
+    )
+
       .then((result) => setReviews(result.reviews))
+
       .catch((e) => setError((e as Error).message))
   }, [businessId])
+
   return (
-    <section className="business-reviews" id="business-reviews" aria-labelledby="business-reviews-title">
+    <section
+      className="business-reviews"
+      id="business-reviews"
+      aria-labelledby="business-reviews-title"
+    >
       <div className="business-reviews-heading">
         <div>
           <span className="public-eyebrow">Educator feedback</span>
           <h2 id="business-reviews-title">Reviews for {businessName}</h2>
-          <p>Feedback follows a successful offer activation. It is not proof of purchase.</p>
+          <p>
+            Feedback follows a successful offer activation. It is not proof of
+            purchase.
+          </p>
         </div>
         {reviews.length > 0 && (
           <span className="business-review-count">
-            {reviews.length} approved {reviews.length === 1 ? "review" : "reviews"}
+            {reviews.length} approved{" "}
+            {reviews.length === 1 ? "review" : "reviews"}
           </span>
         )}
       </div>
-      {error ? <Notice kind="error">{error}</Notice> : reviews.length ? (
+      {error ? (
+        <Notice kind="error">{error}</Notice>
+      ) : reviews.length ? (
         <div className="business-review-list">
           {reviews.map((review) => (
             <article className="business-review-card" key={review.id}>
-              <div className="business-review-stars" aria-label={`${review.rating} out of 5 stars`}>
+              <div
+                className="business-review-stars"
+                aria-label={`${review.rating} out of 5 stars`}
+              >
                 {Array.from({ length: 5 }, (_, index) => (
-                  <Star key={index} size={16} weight={index < review.rating ? "fill" : "regular"} />
+                  <Star
+                    key={index}
+                    size={16}
+                    weight={index < review.rating ? "fill" : "regular"}
+                  />
                 ))}
               </div>
               <p>{review.review_text}</p>
               <small>{new Date(review.created_at).toLocaleDateString()}</small>
-              {review.comments?.map(comment => <p className="review-comment" key={comment.id}><strong>{comment.author}</strong> {comment.body}</p>)}
+              {review.comments?.map((comment) => (
+                <p className="review-comment" key={comment.id}>
+                  <strong>{comment.author}</strong> {comment.body}
+                </p>
+              ))}
               <ReviewTools reviewId={review.id} />
             </article>
           ))}
         </div>
       ) : (
         <p className="business-reviews-empty">
-          No approved educator reviews yet. After activating this business’s offer,
-          you can be the first to share feedback.
+          No approved educator reviews yet. After activating this business’s
+          offer, you can be the first to share feedback.
         </p>
       )}
     </section>
   )
 }
 
-function ActivationDealDetail({ user }: { user: SessionUser }) {
+function ActivationDealDetail({ user }: { user: SessionUser | null }) {
   const { id } = useParams(),
     [deal, setDeal] = useState<Deal | null>(null),
     [locationId, setLocationId] = useState(""),
@@ -1959,69 +2760,110 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
     [copied, setCopied] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("")
+
+  const isOpen = useOpeningStatus(deal)
+
   useEffect(() => {
     api<{ deal: Deal }>(`/deals/${id}`)
+
       .then((result) => {
         setDeal(result.deal)
+
         setLocationId(result.deal.locations?.[0]?.id || "")
-        void post('/analytics/events', { eventType: 'deal_view', businessId: result.deal.business_id, dealId: result.deal.id }).catch(() => {})
+
+        void post("/analytics/events", {
+          eventType: "deal_view",
+          businessId: result.deal.business_id,
+          dealId: result.deal.id,
+        }).catch(() => {})
       })
+
       .catch((e) => setError(e.message))
   }, [id])
+
   useEffect(() => {
     if (deal && window.location.hash === "#business-reviews")
-      requestAnimationFrame(() => document.getElementById("business-reviews")?.scrollIntoView({ behavior: "smooth", block: "start" }))
+      requestAnimationFrame(() =>
+        document
+          .getElementById("business-reviews")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      )
   }, [deal])
+
   useEffect(() => {
     if (!activation?.expiresAt) return
+
     const tick = () => {
       const seconds = Math.max(
         0,
+
         Math.floor(
           (new Date(activation.expiresAt as string).getTime() - Date.now()) /
             1000,
         ),
       )
+
       setRemaining(
         `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
       )
     }
+
     tick()
+
     const timer = window.setInterval(tick, 1000)
+
     return () => window.clearInterval(timer)
   }, [activation?.expiresAt])
+
   if (error && !deal)
     return (
       <Page title="Deal">
         <Notice kind="error">{error}</Notice>
       </Page>
     )
+
   if (!deal)
     return (
       <Page title="Deal">
         <DetailSkeleton />
       </Page>
     )
+
+  if (isInterestCta(deal.cta_type))
+    return (
+      <Page title={deal.business_name}>
+        <OfferInterestDetail deal={deal} user={user} />
+      </Page>
+    )
+
   const locations = deal.locations?.length
     ? deal.locations
     : [
         {
           id: "default",
+
           address: deal.address || deal.business_name,
+
           latitude: deal.latitude,
+
           longitude: deal.longitude,
         },
       ]
+
   const selectedLocation =
     locations.find((location) => location.id === locationId) || locations[0]
+
   const directionsQuery =
     selectedLocation.latitude != null && selectedLocation.longitude != null
       ? `${selectedLocation.latitude},${selectedLocation.longitude}`
       : selectedLocation.address || deal.business_name
+
   const copyPayload = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value)
+
       setCopied(true)
+
       window.setTimeout(() => setCopied(false), 1800)
     } catch {
       setError(
@@ -2029,29 +2871,41 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
       )
     }
   }
+
   const activate = async () => {
-    if (!user.verified) {
+    if (!user?.verified) {
       setError("Verify your email address before activating this offer.")
+
       return
     }
+
     setBusy(true)
+
     setError("")
+
     const finish = async (
       coords?: GeolocationCoordinates,
+
       observedAt?: number,
     ) => {
       try {
         const result = await post<Activation>(`/deals/${deal.id}/activate`, {
           locationId:
             deal.channel === "online" ? undefined : selectedLocation.id,
+
           lat: coords?.latitude,
+
           lng: coords?.longitude,
+
           accuracy: coords?.accuracy,
+
           locationTimestamp: coords
             ? new Date(observedAt ?? Date.now()).toISOString()
             : undefined,
+
           idempotencyKey: crypto.randomUUID(),
         })
+
         setActivation(result)
       } catch (e) {
         setError((e as Error).message)
@@ -2059,48 +2913,81 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
         setBusy(false)
       }
     }
+
     if (deal.channel === "online") {
       await finish()
+
       return
     }
-    if (selectedLocation.latitude == null || selectedLocation.longitude == null) {
+
+    if (
+      selectedLocation.latitude == null ||
+      selectedLocation.longitude == null
+    ) {
       setBusy(false)
-      setError("This location is still being verified by TeachersVIP. Choose another participating location or try again later.")
+
+      setError(
+        "This location is still being verified by TeachersVIP. Choose another participating location or try again later.",
+      )
+
       return
     }
+
     if (!navigator.geolocation) {
       setBusy(false)
-      setError("Location services are unavailable on this device. You can still use Get Directions, but this offer cannot unlock without an on-site location check.")
+
+      setError(
+        "Location services are unavailable on this device. You can still use Get Directions, but this offer cannot unlock without an on-site location check.",
+      )
+
       return
     }
+
     // A permission preflight lets us give a useful recovery path instead of
+
     // silently failing after the browser prompt has already been dismissed.
+
     try {
-      const permission = await navigator.permissions?.query({ name: "geolocation" as PermissionName })
+      const permission = await navigator.permissions?.query({
+        name: "geolocation" as PermissionName,
+      })
+
       if (permission?.state === "denied") {
         setBusy(false)
-        setError("Location access is blocked. Enable location for TeachersVIP in your browser settings, then tap Use Deal again.")
+
+        setError(
+          "Location access is blocked. Enable location for TeachersVIP in your browser settings, then tap Use Deal again.",
+        )
+
         return
       }
     } catch {
       // Older Safari versions do not expose the permissions API; getCurrentPosition remains authoritative.
     }
+
     navigator.geolocation.getCurrentPosition(
       (position) => void finish(position.coords, position.timestamp),
+
       (positionError) => {
         setBusy(false)
-        const message = positionError.code === GeolocationPositionError.PERMISSION_DENIED
-          ? "Location access is required to unlock this on-site offer. Allow it for TeachersVIP and try again."
-          : positionError.code === GeolocationPositionError.TIMEOUT
-            ? "We could not get a fresh location in time. Move closer to the business, check that Location Services are on, and try again."
-            : "Your location could not be confirmed. Check Location Services and try again from the participating business."
+
+        const message =
+          positionError.code === GeolocationPositionError.PERMISSION_DENIED
+            ? "Location access is required to unlock this on-site offer. Allow it for TeachersVIP and try again."
+            : positionError.code === GeolocationPositionError.TIMEOUT
+              ? "We could not get a fresh location in time. Move closer to the business, check that Location Services are on, and try again."
+              : "Your location could not be confirmed. Check Location Services and try again from the participating business."
+
         setError(message)
       },
+
       { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 },
     )
   }
+
   const redemptionValue =
     activation?.redemptionValue || activation?.barcodeValue
+
   return (
     <Page
       title={deal.business_name}
@@ -2184,14 +3071,43 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
             <b>Offer details and restrictions</b>
             <span>{deal.description}</span>
             <span>{deal.restrictions}</span>
-            <span><strong>Usage:</strong> {deal.usage_limit_period === "none" ? "Every visit" : deal.usage_limit_period === "day" ? "Once daily" : deal.usage_limit_period === "month" ? "Once monthly" : deal.usage_limit_period === "lifetime" ? "One time only" : "Once during the offer period"}</span>
-            {deal.ends_at && <span><strong>Expires:</strong> {new Date(deal.ends_at).toLocaleDateString()}</span>}
-            {deal.hours && <span><strong>Hours:</strong> {deal.hours}</span>}
+            <span>
+              <strong>Usage:</strong>{" "}
+              {deal.usage_limit_period === "none"
+                ? "Every visit"
+                : deal.usage_limit_period === "day"
+                  ? "Once daily"
+                  : deal.usage_limit_period === "month"
+                    ? "Once monthly"
+                    : deal.usage_limit_period === "lifetime"
+                      ? "One time only"
+                      : "Once during the offer period"}
+            </span>
+            {deal.ends_at && (
+              <span>
+                <strong>Expires:</strong>{" "}
+                {new Date(deal.ends_at).toLocaleDateString()}
+              </span>
+            )}
+            {(deal.hours || deal.opening_hours) && (
+              <span>
+                <strong>Hours:</strong>{" "}
+                {deal.opening_hours
+                  ? isOpen
+                    ? "Open now"
+                    : "Closed now"
+                  : deal.hours}
+              </span>
+            )}
           </div>
           {!activation && error && <Notice kind="error">{error}</Notice>}
           {activation ? (
             <section
-              className={`report-success activation-success${activation.activationType === "online_offer_access" ? "" : " activation-location-confirmed"}`}
+              className={`report-success activation-success${
+                activation.activationType === "online_offer_access"
+                  ? ""
+                  : " activation-location-confirmed"
+              }`}
               role="status"
             >
               <CheckCircle size={42} weight="fill" />
@@ -2258,16 +3174,14 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
             <div className="flow-actions">
               <div className="deal-sticky-action">
                 <Button
-                  disabled={!user.verified || busy}
+                  disabled={!user?.verified || busy}
                   onClick={() => void activate()}
                 >
                   {busy
                     ? deal.channel === "online"
                       ? "Preparing offer…"
                       : "Checking your location…"
-                    : deal.channel === "online"
-                      ? "Reveal Code"
-                      : "Use Deal"}
+                    : "Use Deal"}
                 </Button>
               </div>
               {deal.channel === "in_person" && (
@@ -2279,7 +3193,9 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
                   onClick={() =>
                     void post("/analytics/events", {
                       eventType: "directions_click",
+
                       businessId: deal.business_id,
+
                       dealId: deal.id,
                     })
                   }
@@ -2296,15 +3212,28 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
                 >
                   {deal.giveaway
                     ? "Visit Giveaway Page"
-                    : deal.channel === "online" ? "Shop Online" : "Visit Business Website"}
+                    : deal.channel === "online"
+                      ? "Shop Online"
+                      : "Visit Business Website"}
                 </a>
               )}
             </div>
           )}
-          {user.verified && (
-            <BusinessReviewForm businessId={deal.business_id} dealId={deal.id} />
+          {!user && (
+            <Link className="action action-gold" to="/create-account">
+              Sign up and verify to use this offer
+            </Link>
           )}
-          <BusinessReviews businessId={deal.business_id} businessName={deal.business_name} />
+          {user?.verified && (
+            <BusinessReviewForm
+              businessId={deal.business_id}
+              dealId={deal.id}
+            />
+          )}
+          <BusinessReviews
+            businessId={deal.business_id}
+            businessName={deal.business_name}
+          />
           <OfferReport dealId={deal.id} />
           {activation && error && <Notice kind="error">{error}</Notice>}
         </div>
@@ -2315,19 +3244,27 @@ function ActivationDealDetail({ user }: { user: SessionUser }) {
 
 function Saved() {
   const navigate = useNavigate()
+
   const [deals, setDeals] = useState<Deal[]>([]),
     [loading, setLoading] = useState(true)
+
   const load = () =>
     api<{ deals: Deal[] }>("/deals?saved=true")
+
       .then((r) => setDeals(r.deals))
+
       .finally(() => setLoading(false))
+
   useEffect(() => {
     void load()
   }, [])
+
   const remove = async (deal: Deal) => {
     await del(`/deals/${deal.id}/save`)
+
     await load()
   }
+
   return (
     <Page title="Saved Deals">
       {loading ? (
@@ -2339,7 +3276,9 @@ function Saved() {
               key={d.id}
               deal={{ ...d, saved: true }}
               onSave={remove}
-              onReview={(deal) => navigate(`/deals/${deal.id}#business-reviews`)}
+              onReview={(deal) =>
+                navigate(`/deals/${deal.id}#business-reviews`)
+              }
             />
           ))}
         </section>
@@ -2360,9 +3299,13 @@ function Saved() {
 
 type LocationDraft = {
   address: string
+
   mapboxId?: string
+
   name: string
+
   timezone: string
+
   radiusMeters: string
 }
 
@@ -2378,17 +3321,23 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
   const [locations, setLocations] = useState<LocationDraft[]>([
       {
         name: "Main location",
+
         address: "",
+
         timezone: getDefaultLocationTimezone(),
+
         radiusMeters: "150",
       },
     ]),
     [sent, setSent] = useState(false),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
+
   const updateLocation = (
     index: number,
+
     key: keyof LocationDraft,
+
     value: string,
   ) =>
     setLocations((current) =>
@@ -2396,30 +3345,49 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
         locationIndex === index ? { ...location, [key]: value } : location,
       ),
     )
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setBusy(true)
+
     setError("")
+
     const data = new FormData(event.currentTarget)
+
     try {
       await post("/partner-inquiries", {
         businessName: data.get("businessName"),
+
         businessEmail: data.get("businessEmail"),
+
         contactName: data.get("contactName"),
+
         proposedDeal: data.get("proposedDeal"),
+
         posSystem: data.get("posSystem"),
+
         redemptionMethod: data.get("redemptionMethod"),
+
         redemptionValue: data.get("redemptionValue") || null,
+
         displayLifetimeMinutes: Number(data.get("displayLifetimeMinutes") || 5),
+
         usageLimit: data.get("usageLimit"),
+
         usageLimitWindow: data.get("usageLimitWindow"),
+
         trackingMode: data.get("trackingMode"),
+
         locations: locations.map((location) => ({
           ...location,
+
           timezone: location.timezone || getDefaultLocationTimezone(),
+
           radiusMeters: Number(location.radiusMeters || 150),
         })),
       })
+
       setSent(true)
     } catch (e) {
       setError((e as Error).message)
@@ -2427,14 +3395,21 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
       setBusy(false)
     }
   }
+
   return (
-    <Page title={publicView ? "Apply to become a partner" : "Partner With Us"} narrow>
+    <Page
+      title={publicView ? "Apply to become a partner" : "Partner With Us"}
+      narrow
+    >
       {sent ? (
         <Empty
           title="Application received"
           text="TeachersVIP will review your locations, redemption setup, and tracking selection before anything is published."
           action={
-            <Link className="action action-gold" to={publicView ? "/" : "/profile"}>
+            <Link
+              className="action action-gold"
+              to={publicView ? "/" : "/profile"}
+            >
               {publicView ? "Back to Home" : "Back to Profile"}
             </Link>
           }
@@ -2473,10 +3448,14 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
               onClick={() =>
                 setLocations((current) => [
                   ...current,
+
                   {
                     name: `Location ${current.length + 1}`,
+
                     address: "",
+
                     timezone: getDefaultLocationTimezone(),
+
                     radiusMeters: "150",
                   },
                 ])
@@ -2486,10 +3465,7 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
             </button>
           </div>
           {locations.map((location, index) => (
-            <fieldset
-              className="location-fieldset"
-              key={`location-${index}`}
-            >
+            <fieldset className="location-fieldset" key={`location-${index}`}>
               <legend>{location.name || `Location ${index + 1}`}</legend>
               <div className="two">
                 <label className="field">
@@ -2508,7 +3484,11 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                     setLocations((current) =>
                       current.map((candidate, locationIndex) =>
                         locationIndex === index
-                          ? { ...candidate, address: value, mapboxId: undefined }
+                          ? {
+                              ...candidate,
+                              address: value,
+                              mapboxId: undefined,
+                            }
                           : candidate,
                       ),
                     )
@@ -2519,9 +3499,12 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                         locationIndex === index
                           ? {
                               ...candidate,
+
                               address: result.label || candidate.address,
+
                               timezone:
                                 result.timezone || getDefaultLocationTimezone(),
+
                               mapboxId:
                                 result.provider === "mapbox"
                                   ? result.id
@@ -2566,7 +3549,8 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
                     required
                   />
                   <small className="field-note">
-                    How close educators must be to use the deal. Recommended: 150 meters (about 500 feet)
+                    How close educators must be to use the deal. Recommended:
+                    150 meters (about 500 feet)
                   </small>
                 </label>
               </div>
@@ -2630,12 +3614,7 @@ function StructuredPartner({ publicView = false }: { publicView?: boolean }) {
             </label>
             <label className="field">
               <span>Maximum uses (limited offers only)</span>
-              <input
-                name="usageLimit"
-                type="number"
-                min="1"
-                placeholder="1"
-              />
+              <input name="usageLimit" type="number" min="1" placeholder="1" />
             </label>
           </div>
           <label className="field">
@@ -2689,6 +3668,7 @@ function DealSkeletons({ count = 4 }: { count?: number }) {
     </section>
   )
 }
+
 function DetailSkeleton() {
   return (
     <div className="detail-skeleton" aria-label="Loading deal">
@@ -2703,13 +3683,18 @@ function DetailSkeleton() {
     </div>
   )
 }
+
 function Empty({
   title,
+
   text,
+
   action,
 }: {
   title: string
+
   text: string
+
   action?: ReactNode
 }) {
   return (
@@ -2725,183 +3710,320 @@ function Empty({
 }
 
 type AdminBusiness = {
+  opening_hours?: WeeklyHours | null
+
+  hours_timezone?: string
+
+  is_open?: boolean | null
+
   id: string
+
   name: string
+
   category: string
+
   description: string
+
   image_url: string
+
   website_url: string | null
+
   address: string | null
+
   published: boolean
+
   locations?: DealLocation[]
 }
+
 type AdminDeal = {
   id: string
+
   business_id: string
+
   business_name: string
+
   title: string
+
+  cta_type?: OfferCtaType
+
+  event_name?: string | null
+
   description: string
+
   channel: "in_person" | "online"
+
   category: string
+
   restrictions: string
+
   estimated_savings_cents: number
+
   featured: boolean
+
   sponsored: boolean
+
   giveaway: boolean
+
   image_url: string | null
+
   published: boolean
 }
+
 type VerificationCase = {
   id: string
+
   email: string
+
   role: string
+
   domain: string
+
   status: string
+
   classification?: string
+
   reason?: string
+
   source?: string
+
   created_at?: string
 }
+
 type ActivationMetric = {
   business_name: string
+
   location_name?: string
+
   activations: number
+
   unique_educators: number
+
   repeat_usage: number
 }
+
 type ActivationAnalytics = {
   metrics: {
     verified_on_site_activations: number
+
     unique_educators: number
+
     repeat_usage: number
+
     online_offer_accesses: number
+
     denied_on_site_attempts: number
   }
+
   activity: ActivationMetric[]
+
   filters: {
-    businesses: Array<{ id: string, name: string }>
-    locations: Array<{ id: string, business_id: string, name: string }>
+    businesses: Array<{ id: string; name: string }>
+
+    locations: Array<{ id: string; business_id: string; name: string }>
   }
 }
+
 type ActivationFilterState = {
   dateFrom: string
+
   dateTo: string
+
   businessId: string
+
   locationId: string
 }
+
 type AdminBusinessReview = {
   id: string
+
   business_id: string
+
   business_name: string
+
   first_name: string
+
   last_name: string
+
   rating: number
+
   review_text: string
+
   status: "pending" | "approved" | "rejected"
+
   moderation_notes: string | null
+
   created_at: string
+
   activated_at: string
+
   activation_type: "verified_on_site" | "online_offer_access"
 }
+
 type BusinessApplication = {
   id: string
+
   business_name: string
+
   contact_name: string
+
   business_email: string
+
   proposed_deal: string
+
   pos_system: string
+
   redemption_method: string
+
   display_ttl_seconds: number
+
   usage_limit_count: number
+
   usage_limit_period: string
+
   tracking_mode: string
+
   status: string
-  locations: Array<DealLocation & { radiusMeters: number, timezone: string }>
+
+  locations: Array<DealLocation & { radiusMeters: number; timezone: string }>
 }
+
 type CreatorNetworkSubmission = {
   id: string
+
   full_name: string
+
   city: string
+
   educator_email: string
+
   contact_information: string
+
   social_handles: string
+
   platforms: string[]
+
   follower_range: string
+
   content_niches: string[]
+
   sample_content: string
+
   opportunity_interests: string[]
+
   contact_consent: boolean
+
   status: "new" | "contacted" | "archived"
+
   created_at: string
 }
+
 type CreatorNetworkFilters = {
   cities: string[]
+
   platforms: string[]
+
   niches: string[]
+
   followerRanges: string[]
 }
+
 type CreatorNetworkFilterState = {
   city: string
+
   platform: string
+
   niche: string
+
   followerRange: string
+
   status: "" | "new" | "contacted" | "archived"
 }
+
 type DomainReview = {
   id: string
+
   normalized_domain: string
+
   classification: "staff_only" | "shared_staff_student" | "personal_provider" | "unknown"
+
   decision: "auto_eligible" | "manual_review" | "blocked"
+
   eligible_role: "K-12 educator" | "College professor" | "both" | null
+
   evidence: string | null
+
   evidence_url: string | null
+
   reviewed_at: string | null
+
   institution_name: string | null
+
   source_code: string | null
 }
 
 function resizeDealImage(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
+
     reader.onerror = () => reject(new Error("The image could not be read."))
+
     reader.onload = () => {
       const image = new Image()
+
       image.onerror = () =>
         reject(new Error("Please choose a valid image file."))
+
       image.onload = () => {
         const width = 1200,
           height = 800,
           scale = Math.max(width / image.width, height / image.height),
           canvas = document.createElement("canvas")
+
         canvas.width = width
+
         canvas.height = height
+
         const context = canvas.getContext("2d")
+
         if (!context)
           return reject(new Error("Image processing is unavailable."))
+
         context.fillStyle = "#eef2f7"
+
         context.fillRect(0, 0, width, height)
+
         const drawWidth = image.width * scale,
           drawHeight = image.height * scale
+
         context.drawImage(
           image,
+
           (width - drawWidth) / 2,
+
           (height - drawHeight) / 2,
+
           drawWidth,
+
           drawHeight,
         )
+
         resolve(canvas.toDataURL("image/jpeg", 0.84))
       }
+
       image.src = String(reader.result)
     }
+
     reader.readAsDataURL(file)
   })
 }
 
 function AdminDealPreview({
   deal,
+
   image,
 }: {
-  deal: Pick<AdminDeal, "business_name" | "title" | "description" | "channel" | "category" | "giveaway">
+  deal: Pick<AdminDeal, "business_name" | "title" | "description" | "channel" | "category" | "giveaway" | "cta_type" | "event_name">
+
   image?: string | null
 }) {
   return (
@@ -2930,6 +4052,10 @@ function AdminDealPreview({
             : deal.title || "Deal title"}
         </strong>
         <p>{deal.description || "Your deal description will appear here."}</p>
+        {isInterestCta(deal.cta_type) && <p>{deal.event_name}</p>}
+        <span className="interest-card-cta">
+          {OFFER_CTA_LABELS[deal.cta_type || "use_deal"]}
+        </span>
       </div>
     </article>
   )
@@ -2937,61 +4063,97 @@ function AdminDealPreview({
 
 function BusinessApplicationReview({
   application,
+
   onChanged,
 }: {
   application: BusinessApplication
+
   onChanged: () => Promise<void>
 }) {
   const [expanded, setExpanded] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("")
+
   const slug =
     application.business_name
+
       .toLowerCase()
+
       .replace(/[^a-z0-9]+/g, "-")
+
       .replace(/^-|-$/g, "")
+
       .slice(0, 60) || "business"
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     const data = new FormData(event.currentTarget)
+
     const submitter = (event.nativeEvent as SubmitEvent)
       .submitter as HTMLButtonElement | null
+
     const action = submitter?.value as "under_review" | "reject" | "approve"
+
     const notes = String(data.get("notes") || "")
+
     setBusy(true)
+
     setError("")
+
     try {
       const body: Record<string, unknown> = { action, notes }
+
       if (action === "approve") {
         const dateValue = (name: string) => {
           const value = String(data.get(name) || "")
+
           return value ? new Date(value).toISOString() : null
         }
+
         Object.assign(body, {
           businessId: data.get("businessId"),
+
           category: data.get("category"),
+
           description: data.get("description"),
+
           imageUrl: data.get("imageUrl"),
+
           websiteUrl: data.get("websiteUrl") || null,
+
           dealId: data.get("dealId"),
+
           dealTitle: data.get("dealTitle"),
+
           dealCategory: data.get("dealCategory"),
+
           restrictions: data.get("restrictions"),
+
           estimatedSavingsCents: Math.round(
             Number(data.get("estimatedSavings") || 0) * 100,
           ),
+
           startsAt: dateValue("startsAt"),
+
           endsAt: dateValue("endsAt"),
+
           publish: data.get("publish") === "on",
+
           locations: application.locations.map((location) => ({
             applicationLocationId: location.id,
+
             latitude: Number(data.get(`latitude-${location.id}`)),
+
             longitude: Number(data.get(`longitude-${location.id}`)),
+
             radiusMeters: Number(data.get(`radius-${location.id}`)),
           })),
         })
       }
+
       await patch(`/admin/business-applications/${application.id}`, body)
+
       await onChanged()
     } catch (e) {
       setError((e as Error).message)
@@ -2999,6 +4161,7 @@ function BusinessApplicationReview({
       setBusy(false)
     }
   }
+
   return (
     <article className="business-application-review">
       <button
@@ -3046,11 +4209,9 @@ function BusinessApplicationReview({
                     defaultValue={slug}
                     required
                   />
-                  <Field
+                  <CategorySelect
                     label="Business category"
-                    name="category"
                     defaultValue="Local business"
-                    required
                   />
                 </div>
                 <label className="field">
@@ -3090,11 +4251,10 @@ function BusinessApplicationReview({
                   />
                 </div>
                 <div className="two">
-                  <Field
-                    label="Deal category"
+                  <CategorySelect
                     name="dealCategory"
+                    label="Deal category"
                     defaultValue="Services"
-                    required
                   />
                   <Field
                     label="Estimated savings ($)"
@@ -3212,17 +4372,76 @@ function BusinessApplicationReview({
   )
 }
 
-function AdminPage() {
+function AdminPage({ userId, view }: { userId: string; view: string }) {
+  const [params] = useSearchParams(),
+    navigate = useNavigate()
+
+  const draftKey = `teachersvip:deal-draft:${userId}`
+
+  const [savedDeal] = useState(() => readDraft(draftKey))
+
+  const dealForm = useRef<HTMLFormElement>(null)
+
+  const restoredDeal = useRef(false)
+
+  const saveDealDraft = () => {
+    if (!dealForm.current) return
+    const fields: Record<string, unknown> = Object.fromEntries(
+      new FormData(dealForm.current).entries(),
+    )
+    fields.locationIds = new FormData(dealForm.current).getAll("locationIds")
+    fields.dealImageData = dealImage
+    try {
+      sessionStorage.setItem(draftKey, JSON.stringify(fields))
+    } catch {
+      /* Storage may be unavailable. */
+    }
+  }
+
+  const businessDraft = useBusinessDraft(userId)
+
+  const [contentLoading, setContentLoading] = useState(true)
+
+  const [hoursReset, setHoursReset] = useState(0)
+
+  const [businessError, setBusinessError] = useState("")
+
+  const [businessMessage, setBusinessMessage] = useState("")
+
+  const [dealError, setDealError] = useState("")
+
+  const [dealMessage, setDealMessage] = useState("")
+
+  const [ctaType, setCtaType] = useState<OfferCtaType>(
+    savedDeal.ctaType || "use_deal",
+  )
+
+  const [offerBusinessId, setOfferBusinessId] = useState(
+    params.get("businessId") || savedDeal.businessId || "",
+  )
+
+  const [offerChannel, setOfferChannel] = useState<"in_person" | "online">(
+    savedDeal.channel || "in_person",
+  )
+
+  const interestOffer = isInterestCta(ctaType)
+
   const [businesses, setBusinesses] = useState<AdminBusiness[]>([]),
     [deals, setDeals] = useState<AdminDeal[]>([]),
     [inquiries, setInquiries] = useState<BusinessApplication[]>([]),
     [audit, setAudit] = useState<{
       id: string
+
       action: string
+
       entity_type: string
+
       entity_id: string
+
       created_at: string
+
       first_name: string
+
       last_name: string
     }[]>([]),
     [verificationQueue, setVerificationQueue] = useState<VerificationCase[]>(
@@ -3233,581 +4452,1004 @@ function AdminPage() {
     ),
     [metrics, setMetrics] = useState({
       members: 0,
+
       uses: 0,
+
       verifiedOnSiteActivations: 0,
+
       uniqueEducators: 0,
+
       repeatUsage: 0,
     }),
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false),
-    [dealImage, setDealImage] = useState<string | null>(null),
+    [dealImage, setDealImage] = useState<string | null>(
+      savedDeal.dealImageData || null,
+    ),
     [preview, setPreview] = useState<AdminDeal | null>(null)
+
   const load = async () => {
     const result = await api<{
       businesses: AdminBusiness[]
+
       deals: AdminDeal[]
+
       inquiries: typeof inquiries
+
       audit: typeof audit
+
       metrics?: Partial<typeof metrics>
+
       verificationQueue?: VerificationCase[]
+
       activationMetrics?: ActivationMetric[]
     }>("/admin/overview")
+
     setBusinesses(result.businesses)
+
+    setContentLoading(false)
+
     setDeals(result.deals)
+
     setInquiries(result.inquiries)
+
     setAudit(result.audit)
+
     setMetrics((current) => ({ ...current, ...result.metrics }))
+
     setVerificationQueue(result.verificationQueue || [])
+
     setActivationMetrics(result.activationMetrics || [])
   }
+
   useEffect(() => {
-    void load().catch((e) => setError((e as Error).message))
+    void load().catch((e) => {
+      setError((e as Error).message)
+      setContentLoading(false)
+    })
   }, [])
+
+  useEffect(() => {
+    if (
+      view !== "create-deal" ||
+      !businesses.length ||
+      !dealForm.current ||
+      restoredDeal.current
+    )
+      return
+
+    for (const element of dealForm.current.elements) {
+      if (
+        !(
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLTextAreaElement
+        ) ||
+        !element.name ||
+        ["businessId", "ctaType", "channel", "dealImage"].includes(element.name)
+      )
+        continue
+
+      const value = savedDeal[element.name]
+
+      if (element instanceof HTMLInputElement && element.type === "checkbox")
+        element.checked = value === "on"
+      else if (element instanceof HTMLSelectElement && element.multiple) {
+        for (const option of element.options)
+          option.selected = Array.isArray(value) && value.includes(option.value)
+      } else if (typeof value === "string") element.value = value
+    }
+
+    restoredDeal.current = true
+  }, [businesses.length, view, savedDeal])
+
+  useEffect(() => {
+    if (view === "create-deal" && restoredDeal.current) saveDealDraft()
+  }, [dealImage])
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setBusinesses((current) => current.map(withOpeningStatus)),
+      60000,
+    )
+    return () => window.clearInterval(timer)
+  }, [])
+
   const submitBusiness = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    const form = event.currentTarget
+
+    setBusinessError("")
+    setBusinessMessage("")
+
+    const validation = validateAdminForm(form)
+
+    if (validation) {
+      setBusinessError(validation)
+      return
+    }
+
     setBusy(true)
+
     setError("")
+
     setMessage("")
-    const d = new FormData(event.currentTarget)
+
+    const d = new FormData(form)
+
     try {
-      await post("/admin/businesses", {
-        id: d.get("id"),
-        name: d.get("name"),
-        category: d.get("category"),
-        description: d.get("description"),
-        imageUrl: d.get("imageUrl"),
-        websiteUrl: d.get("websiteUrl") || null,
-        distance: d.get("distance") || null,
-        hours: d.get("hours") || null,
-        isOpen:
-          d.get("isOpen") === "true"
-            ? true
-            : d.get("isOpen") === "false"
-              ? false
-              : null,
-        address: d.get("address") || null,
-        locationName: d.get("locationName") || "Primary location",
-        timezone: d.get("timezone") || "UTC",
-        radiusMeters: Number(d.get("radiusMeters") || 150),
-        latitude: d.get("latitude") ? Number(d.get("latitude")) : null,
-        longitude: d.get("longitude") ? Number(d.get("longitude")) : null,
-      })
-      event.currentTarget.reset()
-      setMessage("Business added.")
-      await load()
+      const addedBusiness = await post<{ businessId: string }>(
+        "/admin/businesses",
+        {
+          id: d.get("id"),
+
+          name: d.get("name"),
+
+          category: d.get("category"),
+
+          description: d.get("description"),
+
+          imageUrl: d.get("imageUrl"),
+
+          websiteUrl: d.get("websiteUrl") || null,
+
+          distance: d.get("distance") || null,
+
+          openingHours: JSON.parse(String(d.get("openingHours") || "null")),
+
+          hours: d.get("hours") || null,
+
+          isOpen:
+            d.get("isOpen") === "true"
+              ? true
+              : d.get("isOpen") === "false"
+                ? false
+                : null,
+
+          address: d.get("address") || null,
+
+          locationName: d.get("locationName") || "Primary location",
+
+          timezone: d.get("timezone") || "UTC",
+
+          radiusMeters: Number(d.get("radiusMeters") || 150),
+
+          latitude: d.get("latitude") ? Number(d.get("latitude")) : null,
+
+          longitude: d.get("longitude") ? Number(d.get("longitude")) : null,
+        },
+      )
+
+      form.reset()
+
+      businessDraft.clear()
+
+      setHoursReset((current) => current + 1)
+
+      setBusinessMessage("Business added successfully.")
+
+      if (params.get("returnTo") === "/admin/deals/new") {
+        navigate(
+          `/admin/deals/new?businessId=${encodeURIComponent(addedBusiness.businessId || String(d.get("id")))}`,
+        )
+        return
+      }
+
+      await load().catch(() =>
+        setBusinessMessage(
+          "Business added successfully. Refresh the page to update the inventory.",
+        ),
+      )
     } catch (e) {
-      setError((e as Error).message)
+      setBusinessError((e as Error).message)
+
+      focusApiError(form, e)
     } finally {
       setBusy(false)
     }
   }
+
   const submitDeal = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    const form = event.currentTarget
+
+    setDealError("")
+    setDealMessage("")
+
+    const validation = validateAdminForm(form)
+
+    if (validation) {
+      setDealError(validation)
+      return
+    }
+
     setBusy(true)
+
     setError("")
+
     setMessage("")
-    const d = new FormData(event.currentTarget)
+
+    const d = new FormData(form)
+
     const dateValue = (name: string) => {
       const value = String(d.get(name) || "")
+
       return value ? new Date(value).toISOString() : null
     }
+
     try {
       await post("/admin/deals", {
+        ctaType,
+
+        eventName: d.get("eventName") || null,
+
         id: d.get("id"),
+
         businessId: d.get("businessId"),
+
         title: d.get("title"),
+
         description: d.get("description"),
+
         channel: d.get("channel"),
+
         category: d.get("category"),
+
         restrictions: d.get("restrictions"),
+
         imageUrl: dealImage,
+
         promoCode: d.get("promoCode") || undefined,
-        redemptionMethod: d.get("redemptionMethod"),
+
+        redemptionMethod: d.get("redemptionMethod") || "cashier_instruction",
+
         redemptionValue: d.get("redemptionValue") || null,
+
         displayTtlSeconds: Number(d.get("displayLifetimeMinutes") || 5) * 60,
-        usageLimitCount: d.get("usageLimitPeriod") !== "none" && d.get("usageLimitCount")
-          ? Number(d.get("usageLimitCount"))
-          : null,
-        usageLimitPeriod: d.get("usageLimitPeriod"),
-        usageLimitScope: d.get("usageLimitScope"),
-        trackingMode: d.get("trackingMode"),
+
+        usageLimitCount:
+          !interestOffer &&
+          d.get("usageLimitPeriod") !== "none" &&
+          d.get("usageLimitCount")
+            ? Number(d.get("usageLimitCount"))
+            : null,
+
+        usageLimitPeriod: interestOffer ? "none" : d.get("usageLimitPeriod"),
+
+        usageLimitScope: d.get("usageLimitScope") || "offer",
+
+        trackingMode: interestOffer
+          ? "online"
+          : offerChannel === "online"
+            ? "online"
+            : d.get("trackingMode"),
+
         locationIds: d.getAll("locationIds"),
+
         estimatedSavingsCents: Math.round(
           Number(d.get("estimatedSavingsCents") || 0) * 100,
         ),
+
         startsAt: dateValue("startsAt"),
+
         endsAt: dateValue("endsAt"),
+
         featured: d.get("featured") === "on",
+
         sponsored: d.get("sponsored") === "on",
+
         giveaway: d.get("giveaway") === "on",
       })
-      event.currentTarget.reset()
+
+      form.reset()
+
+      setCtaType("use_deal")
+      setOfferBusinessId("")
+      setOfferChannel("in_person")
+
       setDealImage(null)
-      setMessage("Deal published to Discover.")
-      await load()
+
+      try {
+        sessionStorage.removeItem(draftKey)
+      } catch {
+        /* Optional storage. */
+      }
+
+      restoredDeal.current = false
+
+      setDealMessage("Offer published to Discover.")
+
+      await load().catch(() =>
+        setDealMessage(
+          "Offer published successfully. Refresh the page to update the inventory.",
+        ),
+      )
     } catch (e) {
-      setError((e as Error).message)
+      setDealError((e as Error).message)
+
+      focusApiError(form, e)
     } finally {
       setBusy(false)
     }
   }
+
   const uploadDealImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
+
     if (!file) return
+
     if (!file.type.startsWith("image/")) {
       setError("Choose a JPG, PNG, WEBP, or GIF image.")
+
       return
     }
+
     if (file.size > 8 * 1024 * 1024) {
       setError("Images must be smaller than 8 MB.")
+
       return
     }
+
     try {
       setDealImage(await resizeDealImage(file))
+
       setError("")
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   const togglePublished = async (deal: AdminDeal) => {
     try {
       await patch(`/admin/deals/${deal.id}`, { published: !deal.published })
+
       await load()
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   const toggleBusiness = async (business: AdminBusiness) => {
     try {
       await patch(`/admin/businesses/${business.id}`, {
         published: !business.published,
       })
+
       await load()
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   return (
-    <Page title="Superadmin Dashboard">
-      <div className="admin-intro">
-        <div>
-          <span>CONTENT CONTROL</span>
-          <h2>Load and publish educator deals</h2>
-          <p>
-            Add businesses, attach offers, and control what verified educators
-            see in Discover.
-          </p>
+    <Page
+      title={
+        view === "add-business"
+          ? "Add Business"
+          : view === "create-deal"
+            ? "Create Deal"
+            : view === "requests-messages"
+              ? "Requests & Messages"
+              : view === "overview"
+                ? "Overview"
+                : "Businesses & Deals"
+      }
+    >
+      <AdminNavigation
+        section={
+          ["add-business", "create-deal"].includes(view)
+            ? "businesses-deals"
+            : view
+        }
+      />
+      {["add-business", "create-deal"].includes(view) && (
+        <Link
+          className="admin-back-link"
+          to={
+            params.get("returnTo") === "/admin/deals/new"
+              ? "/admin/deals/new"
+              : "/admin/businesses-deals"
+          }
+        >
+          ←{" "}
+          {params.get("returnTo") === "/admin/deals/new"
+            ? "Back to deal draft"
+            : "Back to Businesses & Deals"}
+        </Link>
+      )}
+      {view === "businesses-deals" && (
+        <div className="admin-primary-actions">
+          <Link className="action action-gold" to="/admin/businesses/new">
+            Add Business
+          </Link>
+          <Link className="action action-soft" to="/admin/deals/new">
+            Create Deal
+          </Link>
         </div>
-        <Storefront size={42} weight="duotone" />
-      </div>
+      )}
+      {contentLoading && (
+        <p className="admin-empty" role="status">
+          Loading admin information…
+        </p>
+      )}
       {error && <Notice kind="error">{error}</Notice>}
       {message && <Notice kind="success">{message}</Notice>}
-      <section className="stats">
-        <div>
-          <strong>{businesses.length}</strong>
-          <span>BUSINESSES</span>
-        </div>
-        <div>
-          <strong>{deals.filter((d) => d.published).length}</strong>
-          <span>PUBLISHED DEALS</span>
-        </div>
-        <div>
-          <strong>{metrics.members}</strong>
-          <span>MEMBERS</span>
-        </div>
-        <div>
-          <strong>{metrics.uses}</strong>
-          <span>VERIFIED ON-SITE DEAL ACTIVATIONS</span>
-        </div>
-      </section>
-      <section className="admin-forms">
-        <form className="admin-card form-grid" onSubmit={submitBusiness}>
-          <div className="admin-card-heading">
-            <Storefront size={22} />
+      {view === "overview" && (
+        <>
+          <section className="stats">
             <div>
-              <h2>Add business</h2>
-              <p>Create the business record first.</p>
+              <strong>{businesses.length}</strong>
+              <span>BUSINESSES</span>
             </div>
-          </div>
-          <Field
-            label="URL slug"
-            name="id"
-            placeholder="bright-cafe"
-            required
-          />
-          <Field label="Business name" name="name" required />
-          <Field
-            label="Category"
-            name="category"
-            placeholder="Dining"
-            required
-          />
-          <label className="field">
-            <span>Description</span>
-            <textarea name="description" required minLength={5} />
-          </label>
-          <Field
-            label="Image URL"
-            name="imageUrl"
-            placeholder="/business.jpg"
-            required
-          />
-          <Field label="Website URL" name="websiteUrl" type="url" />
-          <div className="two">
-            <Field label="Address" name="address" />
-            <Field
-              label="Distance label"
-              name="distance"
-              placeholder="Houston, TX"
-            />
-          </div>
-          <div className="two">
-            <Field
-              label="Location name"
-              name="locationName"
-              defaultValue="Primary location"
-              required
-            />
-            <Field
-              label="Timezone"
-              name="timezone"
-              defaultValue="America/Chicago"
-              required
-            />
-          </div>
-          <div className="three">
-            <Field
-              label="Latitude"
-              name="latitude"
-              type="number"
-              min={-90}
-              max={90}
-              step="any"
-              required
-            />
-            <Field
-              label="Longitude"
-              name="longitude"
-              type="number"
-              min={-180}
-              max={180}
-              step="any"
-              required
-            />
-            <Field
-              label="Radius (meters)"
-              name="radiusMeters"
-              type="number"
-              min={25}
-              max={5000}
-              defaultValue="150"
-              required
-            />
-          </div>
-          <div className="two">
-            <Field label="Hours" name="hours" placeholder="Open until 9 PM" />
-            <label className="field">
-              <span>Open status</span>
-              <select name="isOpen" defaultValue="">
-                <option value="">Unknown</option>
-                <option value="true">Open</option>
-                <option value="false">Closed</option>
-              </select>
-            </label>
-          </div>
-          <Button type="submit" disabled={busy}>
-            Add Business
-          </Button>
-        </form>
-        <form className="admin-card form-grid" onSubmit={submitDeal}>
-          <div className="admin-card-heading">
-            <Tag size={22} />
             <div>
-              <h2>Load a deal</h2>
-              <p>New deals publish immediately after saving.</p>
+              <strong>{deals.filter((d) => d.published).length}</strong>
+              <span>PUBLISHED DEALS</span>
             </div>
-          </div>
-          <Field
-            label="Deal ID"
-            name="id"
-            placeholder="bright-cafe-15"
-            required
-          />
-          <label className="field">
-            <span>Business</span>
-            <select name="businessId" required defaultValue="">
-              <option value="" disabled>
-                Select a business
-              </option>
-              {businesses.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Participating locations (in-person)</span>
-            <select
-              name="locationIds"
-              multiple
-              size={Math.min(
-                6,
-                Math.max(
-                  2,
-                  businesses.flatMap((business) => business.locations || [])
-                    .length,
-                ),
-              )}
-            >
-              {businesses.flatMap((business) =>
-                (business.locations || []).map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {business.name} · {location.name || location.address}
-                  </option>
-                )),
-              )}
-            </select>
+            <div>
+              <strong>{metrics.members}</strong>
+              <span>MEMBERS</span>
+            </div>
+            <div>
+              <strong>{metrics.uses}</strong>
+              <span>VERIFIED ON-SITE DEAL ACTIVATIONS</span>
+            </div>
+          </section>
+        </>
+      )}
+      <section className="admin-forms admin-single-form">
+        {view === "add-business" && (
+          <form
+            className="admin-card form-grid"
+            ref={businessDraft.ref}
+            onChange={businessDraft.save}
+            noValidate
+            onSubmit={submitBusiness}
+          >
+            <div className="admin-card-heading">
+              <Storefront size={22} />
+              <div>
+                <h2>Business details</h2>
+                <p>Create the business record first.</p>
+              </div>
+            </div>
+            <Field
+              label="URL slug"
+              name="id"
+              placeholder="bright-cafe"
+              pattern="[a-z0-9-]+"
+              maxLength={80}
+              required
+            />
             <small className="field-note">
-              Select the locations for this offer. If none are selected, all
-              active locations for the chosen business are used.
+              Use lowercase letters, numbers and hyphens for the URL slug.
             </small>
-          </label>
-          <Field
-            label="Offer title"
-            name="title"
-            placeholder="15% off your order"
-            required
-          />
-          <label className="field">
-            <span>Deal description</span>
-            <textarea name="description" required minLength={5} />
-          </label>
-          <div className="two">
-            <label className="field">
-              <span>Channel</span>
-              <select name="channel" defaultValue="in_person">
-                <option value="in_person">In person</option>
-                <option value="online">Online</option>
-              </select>
-            </label>
             <Field
-              label="Category"
-              name="category"
-              placeholder="Dining"
-              required
-            />
-          </div>
-          <label className="field">
-            <span>Restrictions</span>
-            <textarea
-              name="restrictions"
-              required
+              label="Business name"
+              name="name"
               minLength={2}
-              placeholder="Valid for verified educators. One per visit."
-            />
-          </label>
-          <div className="two">
-            <label className="field">
-              <span>Redemption method</span>
-              <select
-                name="redemptionMethod"
-                required
-                defaultValue="cashier_instruction"
-              >
-                <option value="pos_button">POS button</option>
-                <option value="coupon_code">Coupon code</option>
-                <option value="barcode">Barcode</option>
-                <option value="cashier_instruction">Cashier instruction</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Tracking setup</span>
-              <select
-                name="trackingMode"
-                required
-                defaultValue="standard_geolocation"
-              >
-                <option value="standard_geolocation">
-                  Standard geolocation
-                </option>
-                <option value="enhanced_pos">Enhanced POS tracking</option>
-                <option value="online">Online (no location)</option>
-              </select>
-            </label>
-          </div>
-          <label className="field">
-            <span>Code, barcode value, or cashier instruction</span>
-            <textarea
-              name="redemptionValue"
-              placeholder="Displayed only after a successful activation"
-            />
-          </label>
-          <div className="three">
-            <Field
-              label="Display lifetime (minutes)"
-              name="displayLifetimeMinutes"
-              type="number"
-              min={1}
-              max={60}
-              defaultValue="5"
+              maxLength={140}
               required
             />
-            <Field
-              label="Usage limit"
-              name="usageLimitCount"
-              type="number"
-              min={1}
-              max={1000}
-              defaultValue="1"
-              required
-            />
+            <CategorySelect existing={businesses.map((b) => b.category)} />
             <label className="field">
-              <span>Usage window</span>
-              <select name="usageLimitPeriod" required defaultValue="day">
-                <option value="none">Every visit</option>
-                <option value="day">Once daily</option>
-                <option value="month">Once monthly</option>
-                <option value="lifetime">One time only</option>
-                <option value="promo">Promotional period</option>
-              </select>
-            </label>
-          </div>
-          <label className="field">
-            <span>Limit scope</span>
-            <select name="usageLimitScope" defaultValue="offer">
-              <option value="offer">Across the offer</option>
-              <option value="location">Per location</option>
-            </select>
-          </label>
-          <div className="two">
-            <Field
-              label="Estimated savings ($)"
-              name="estimatedSavingsCents"
-              type="number"
-              minLength={1}
-              placeholder="5"
-            />
-            <Field label="Promo code (online only)" name="promoCode" />
-          </div>
-          <div className="two">
-            <Field
-              label="Starts (optional)"
-              name="startsAt"
-              type="datetime-local"
-            />
-            <Field
-              label="Ends (optional)"
-              name="endsAt"
-              type="datetime-local"
-            />
-          </div>
-          <label className="field upload-field">
-            <span>Deal image</span>
-            <input
-              name="dealImage"
-              type="file"
-              accept="image/*"
-              onChange={(event) => void uploadDealImage(event)}
-            />
-            <small>
-              Images are normalized to the same 3:2 deal-card frame.
-            </small>
-            {dealImage && (
-              <img
-                className="upload-thumb"
-                src={dealImage}
-                alt="Deal image preview"
+              <span>Description</span>
+              <textarea
+                name="description"
+                required
+                minLength={5}
+                maxLength={1000}
               />
+            </label>
+            <Field
+              label="Image URL"
+              name="imageUrl"
+              placeholder="/business.jpg"
+              maxLength={500}
+              required
+            />
+            <Field label="Website URL" name="websiteUrl" type="url" />
+            <div className="two">
+              <Field label="Address" name="address" />
+              <Field
+                label="Distance label"
+                name="distance"
+                placeholder="Houston, TX"
+              />
+            </div>
+            <div className="two">
+              <Field
+                label="Location name"
+                name="locationName"
+                defaultValue="Primary location"
+                required
+              />
+              <Field
+                label="Timezone"
+                name="timezone"
+                defaultValue="America/Chicago"
+                required
+              />
+            </div>
+            <div className="three">
+              <Field
+                label="Latitude"
+                name="latitude"
+                type="number"
+                min={-90}
+                max={90}
+                step="any"
+              />
+              <Field
+                label="Longitude"
+                name="longitude"
+                type="number"
+                min={-180}
+                max={180}
+                step="any"
+              />
+              <Field
+                label="Radius (meters)"
+                name="radiusMeters"
+                type="number"
+                min={25}
+                max={5000}
+                defaultValue="150"
+                required
+              />
+            </div>
+            <small className="field-note">
+              Coordinates are optional when adding a business. Supply both
+              together to enable location verification for in-person deals.
+            </small>
+            <WeeklyHoursEditor
+              key={`business-hours-${hoursReset}`}
+              initial={
+                readDraft(`teachersvip:business-draft:${userId}`).openingHours
+              }
+              initialTimezone={
+                readDraft(`teachersvip:business-draft:${userId}`).timezone
+              }
+              onChange={businessDraft.save}
+            />
+            {businessError && <Notice kind="error">{businessError}</Notice>}
+            {businessMessage && (
+              <Notice kind="success">{businessMessage}</Notice>
             )}
-          </label>
-          <label className="check">
-            <input name="featured" type="checkbox" />
-            <span>Featured deal</span>
-          </label>
-          <label className="check">
-            <input name="sponsored" type="checkbox" />
-            <span>Sponsored placement</span>
-          </label>
-          <label className="check">
-            <input name="giveaway" type="checkbox" />
-            <span>Giveaway</span>
-          </label>
-          <Button type="submit" disabled={busy || !businesses.length}>
-            Publish Deal
-          </Button>
-        </form>
-      </section>
-      <section className="admin-card admin-table-card">
-        <div className="admin-card-heading">
-          <Storefront size={22} />
-          <div>
-            <h2>Business inventory</h2>
-            <p>Hide a business to remove all of its deals from Discover.</p>
-          </div>
-        </div>
-        <div className="admin-table">
-          {businesses.map((business) => (
-            <div className="admin-row" key={business.id}>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Add Business"}
+            </Button>
+          </form>
+        )}
+        {view === "create-deal" && (
+          <form
+            className="admin-card form-grid"
+            ref={dealForm}
+            onChange={() => window.setTimeout(saveDealDraft, 0)}
+            noValidate
+            onSubmit={submitDeal}
+          >
+            <div className="admin-card-heading">
+              <Tag size={22} />
               <div>
-                <strong>{business.name}</strong>
-                <span>
-                  {business.category} · {business.address || "Online business"}
-                </span>
+                <h2>Offer details</h2>
+                <p>New deals publish immediately after saving.</p>
               </div>
-              <span
-                className={`admin-status ${business.published ? "live" : ""}`}
-              >
-                {business.published ? "Published" : "Hidden"}
-              </span>
-              <button
-                className="action action-soft"
-                onClick={() => void toggleBusiness(business)}
-              >
-                {business.published ? "Hide" : "Publish"}
-              </button>
             </div>
-          ))}
-        </div>
+            <Field
+              label="Deal ID"
+              name="id"
+              placeholder="bright-cafe-15"
+              pattern="[a-z0-9-]+"
+              maxLength={100}
+              required
+            />
+            <label className="field">
+              <span>CTA type</span>
+              <select
+                name="ctaType"
+                value={ctaType}
+                onChange={(event) =>
+                  setCtaType(event.target.value as OfferCtaType)
+                }
+              >
+                {Object.entries(OFFER_CTA_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {interestOffer && (
+              <>
+                <Field
+                  label="Event name"
+                  name="eventName"
+                  required
+                  minLength={2}
+                />
+                <Notice>
+                  Educators must sign up and verify first. These submissions are
+                  saved to Interested educators without a location check or deal
+                  activation.
+                </Notice>
+              </>
+            )}
+            <label className="field">
+              <span>Business</span>
+              <select
+                name="businessId"
+                required
+                value={offerBusinessId}
+                onChange={(event) => setOfferBusinessId(event.target.value)}
+              >
+                <option value="" disabled>
+                  Select a business
+                </option>
+                {businesses.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="field-note">
+              Every deal belongs to a business.{" "}
+              <Link
+                to="/admin/businesses/new?returnTo=/admin/deals/new"
+                onClick={saveDealDraft}
+              >
+                Add Business
+              </Link>{" "}
+              if it is not listed yet. Your deal draft is saved when you leave.
+            </p>
+            {!interestOffer && offerChannel === "in_person" && (
+              <label className="field">
+                <span>Participating locations (in-person)</span>
+                <select
+                  name="locationIds"
+                  multiple
+                  size={Math.min(
+                    6,
+
+                    Math.max(
+                      2,
+
+                      businesses.flatMap((business) => business.locations || [])
+                        .length,
+                    ),
+                  )}
+                >
+                  {businesses
+                    .filter((business) => business.id === offerBusinessId)
+                    .flatMap((business) =>
+                      (business.locations || [])
+                        .filter(
+                          (location) =>
+                            location.latitude !== null &&
+                            location.longitude !== null,
+                        )
+                        .map((location) => (
+                          <option key={location.id} value={location.id}>
+                            {business.name} ·{" "}
+                            {location.name || location.address}
+                          </option>
+                        )),
+                    )}
+                </select>
+                <small className="field-note">
+                  Select the locations for this offer. If none are selected, all
+                  active locations for the chosen business are used. On-site
+                  verification requires locations with both coordinates.
+                </small>
+                <Link
+                  to={`/admin/locations/new?businessId=${encodeURIComponent(offerBusinessId)}&returnTo=/admin/deals/new`}
+                  onClick={saveDealDraft}
+                >
+                  Add Location
+                </Link>
+              </label>
+            )}
+            <Field
+              label="Offer title"
+              name="title"
+              placeholder="15% off your order"
+              required
+            />
+            <label className="field">
+              <span>Deal description</span>
+              <textarea name="description" required minLength={5} />
+            </label>
+            <div className="two">
+              <label className="field">
+                <span>Channel</span>
+                <select
+                  name="channel"
+                  value={offerChannel}
+                  onChange={(event) =>
+                    setOfferChannel(
+                      event.target.value as "in_person" | "online",
+                    )
+                  }
+                >
+                  <option value="in_person">In person</option>
+                  <option value="online">Online</option>
+                </select>
+              </label>
+              <CategorySelect
+                existing={[
+                  ...businesses.map((b) => b.category),
+                  ...deals.map((d) => d.category),
+                ]}
+              />
+            </div>
+            <label className="field">
+              <span>Restrictions</span>
+              <textarea
+                name="restrictions"
+                required
+                minLength={2}
+                placeholder="Valid for verified educators. One per visit."
+              />
+            </label>
+            {!interestOffer && (
+              <fieldset className="offer-redemption-fields">
+                <div className="two">
+                  <label className="field">
+                    <span>Redemption method</span>
+                    <select
+                      name="redemptionMethod"
+                      required
+                      defaultValue="cashier_instruction"
+                    >
+                      <option value="pos_button">POS button</option>
+                      <option value="coupon_code">Coupon code</option>
+                      <option value="barcode">Barcode</option>
+                      <option value="cashier_instruction">
+                        Cashier instruction
+                      </option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Tracking setup</span>
+                    <select
+                      name="trackingMode"
+                      required
+                      defaultValue="standard_geolocation"
+                    >
+                      <option value="standard_geolocation">
+                        Standard geolocation
+                      </option>
+                      <option value="enhanced_pos">
+                        Enhanced POS tracking
+                      </option>
+                      {offerChannel === "online" && (
+                        <option value="online">Online (no location)</option>
+                      )}
+                    </select>
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Code, barcode value, or cashier instruction</span>
+                  <textarea
+                    name="redemptionValue"
+                    placeholder="Displayed only after a successful activation"
+                  />
+                </label>
+                <div className="three">
+                  <Field
+                    label="Display lifetime (minutes)"
+                    name="displayLifetimeMinutes"
+                    type="number"
+                    min={1}
+                    max={60}
+                    defaultValue="5"
+                    required
+                  />
+                  <Field
+                    label="Usage limit"
+                    name="usageLimitCount"
+                    type="number"
+                    min={1}
+                    max={1000}
+                    defaultValue="1"
+                    required
+                  />
+                  <label className="field">
+                    <span>Usage window</span>
+                    <select name="usageLimitPeriod" required defaultValue="day">
+                      <option value="none">Every visit</option>
+                      <option value="day">Once daily</option>
+                      <option value="month">Once monthly</option>
+                      <option value="lifetime">One time only</option>
+                      <option value="promo">Promotional period</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Limit scope</span>
+                  <select name="usageLimitScope" defaultValue="offer">
+                    <option value="offer">Across the offer</option>
+                    <option value="location">Per location</option>
+                  </select>
+                </label>
+                <div className="two">
+                  <Field
+                    label="Estimated savings ($)"
+                    name="estimatedSavingsCents"
+                    type="number"
+                    minLength={1}
+                    placeholder="5"
+                  />
+                  <Field label="Promo code (online only)" name="promoCode" />
+                </div>
+              </fieldset>
+            )}
+            <div className="two">
+              <Field
+                label="Starts (optional)"
+                name="startsAt"
+                type="datetime-local"
+              />
+              <Field
+                label="Ends (optional)"
+                name="endsAt"
+                type="datetime-local"
+              />
+            </div>
+            <label className="field upload-field">
+              <span>Deal image</span>
+              <input
+                name="dealImage"
+                type="file"
+                accept="image/*"
+                onChange={(event) => void uploadDealImage(event)}
+              />
+              <small>
+                Images are normalized to the same 3:2 deal-card frame.
+              </small>
+              {dealImage && (
+                <img
+                  className="upload-thumb"
+                  src={dealImage}
+                  alt="Deal image preview"
+                />
+              )}
+            </label>
+            <label className="check">
+              <input name="featured" type="checkbox" />
+              <span>Featured deal</span>
+            </label>
+            <label className="check">
+              <input name="sponsored" type="checkbox" />
+              <span>Sponsored placement</span>
+            </label>
+            <label className="check">
+              <input name="giveaway" type="checkbox" />
+              <span>Giveaway</span>
+            </label>
+            {dealError && <Notice kind="error">{dealError}</Notice>}
+            {dealMessage && <Notice kind="success">{dealMessage}</Notice>}
+            <Button type="submit" disabled={busy || !businesses.length}>
+              {busy ? "Saving…" : "Publish Offer"}
+            </Button>
+          </form>
+        )}
       </section>
-      <section className="admin-card admin-table-card">
-        <div className="admin-card-heading">
-          <Tag size={22} />
-          <div>
-            <h2>Deal inventory</h2>
-            <p>Publishing changes are reflected in Discover immediately.</p>
-          </div>
-        </div>
-        <div className="admin-table">
-          {deals.map((deal) => (
-            <div className="admin-row" key={deal.id}>
+      {view === "businesses-deals" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <Storefront size={22} />
               <div>
-                <strong>{deal.title}</strong>
-                <span>
-                  {deal.business_name} · {deal.category}
-                </span>
+                <h2>Businesses</h2>
+                <p>Hide a business to remove all of its deals from Discover.</p>
               </div>
-              <span className={`admin-status ${deal.published ? "live" : ""}`}>
-                {deal.published ? "Published" : "Hidden"}
-              </span>
-              <button
-                className="action action-soft"
-                onClick={() => setPreview(deal)}
-              >
-                Preview
-              </button>
-              <button
-                className="action action-soft"
-                onClick={() => void togglePublished(deal)}
-              >
-                {deal.published ? "Hide" : "Publish"}
-              </button>
             </div>
-          ))}
-          {!deals.length && <p className="admin-empty">No deals loaded yet.</p>}
-        </div>
-      </section>
+            <div className="admin-table">
+              {businesses.map((business) => (
+                <div className="admin-row" key={business.id}>
+                  <div>
+                    <strong>{business.name}</strong>
+                    <span>
+                      {business.category} ·{" "}
+                      {business.address ||
+                        (business.category === "Online"
+                          ? "Online business"
+                          : "Location not specified")}{" "}
+                      · {business.locations?.length || 0} locations
+                      {business.opening_hours &&
+                        ` · ${business.is_open ? "Open now" : "Closed now"}`}
+                    </span>
+                  </div>
+                  <span
+                    className={`admin-status ${
+                      business.published ? "live" : ""
+                    }`}
+                  >
+                    {business.published ? "Published" : "Hidden"}
+                  </span>
+                  <div className="admin-row-actions">
+                    <Link
+                      className="action action-soft"
+                      to={`/admin/locations/new?businessId=${encodeURIComponent(business.id)}`}
+                    >
+                      Add Location
+                    </Link>
+                    <Link
+                      className="action action-soft"
+                      to={`/admin/deals/new?businessId=${encodeURIComponent(business.id)}`}
+                    >
+                      Create Deal
+                    </Link>
+                    <button
+                      className="action action-soft"
+                      onClick={() => void toggleBusiness(business)}
+                    >
+                      {business.published ? "Hide" : "Publish"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!contentLoading && !businesses.length && (
+                <p className="admin-empty">
+                  No businesses yet. Choose Add Business to get started.
+                </p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "businesses-deals" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <Tag size={22} />
+              <div>
+                <h2>Deals</h2>
+                <p>Publishing changes are reflected in Discover immediately.</p>
+              </div>
+            </div>
+            <div className="admin-table">
+              {deals.map((deal) => (
+                <div className="admin-row" key={deal.id}>
+                  <div>
+                    <strong>{deal.title}</strong>
+                    <span>
+                      {deal.business_name} · {deal.category} ·{" "}
+                      {OFFER_CTA_LABELS[deal.cta_type || "use_deal"]}
+                    </span>
+                  </div>
+                  <span
+                    className={`admin-status ${deal.published ? "live" : ""}`}
+                  >
+                    {deal.published ? "Published" : "Hidden"}
+                  </span>
+                  <div className="admin-row-actions">
+                    <button
+                      className="action action-soft"
+                      onClick={() => setPreview(deal)}
+                    >
+                      Preview
+                    </button>
+                    <button
+                      className="action action-soft"
+                      onClick={() => void togglePublished(deal)}
+                    >
+                      {deal.published ? "Hide" : "Publish"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!contentLoading && !deals.length && (
+                <p className="admin-empty">No deals loaded yet.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
       {preview && (
         <section className="admin-card admin-preview-panel">
           <div className="admin-card-heading">
@@ -3826,51 +5468,60 @@ function AdminPage() {
           <AdminDealPreview deal={preview} image={preview.image_url} />
         </section>
       )}
-      <section className="admin-card admin-table-card">
-        <div className="admin-card-heading">
-          <Storefront size={22} />
-          <div>
-            <h2>Partner requests</h2>
-            <p>Business interest submitted through the public site.</p>
-          </div>
-        </div>
-        <div className="admin-table">
-          {inquiries.map((item) => (
-            <BusinessApplicationReview
-              key={item.id}
-              application={item}
-              onChanged={load}
-            />
-          ))}
-          {!inquiries.length && (
-            <p className="admin-empty">No partner requests yet.</p>
-          )}
-        </div>
-      </section>
-      <section className="admin-card admin-table-card">
-        <div className="admin-card-heading">
-          <ShieldCheck size={22} />
-          <div>
-            <h2>Recent admin activity</h2>
-            <p>Publishing actions are retained for accountability.</p>
-          </div>
-        </div>
-        <div className="admin-table">
-          {audit.map((item) => (
-            <div className="admin-row" key={item.id}>
+      {view === "requests-messages" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <Storefront size={22} />
               <div>
-                <strong>
-                  {item.action} {item.entity_type}
-                </strong>
-                <span>
-                  {item.entity_id} · {item.first_name} {item.last_name}
-                </span>
+                <h2>Partner requests</h2>
+                <p>Business interest submitted through the public site.</p>
               </div>
-              <span>{new Date(item.created_at).toLocaleString()}</span>
             </div>
-          ))}
-        </div>
-      </section>
+            <div className="admin-table">
+              {inquiries.map((item) => (
+                <BusinessApplicationReview
+                  key={item.id}
+                  application={item}
+                  onChanged={load}
+                />
+              ))}
+              {!inquiries.length && (
+                <p className="admin-empty">No partner requests yet.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "overview" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <ShieldCheck size={22} />
+              <div>
+                <h2>Recent admin activity</h2>
+                <p>Publishing actions are retained for accountability.</p>
+              </div>
+            </div>
+            <div className="admin-table">
+              {audit.map((item) => (
+                <div className="admin-row" key={item.id}>
+                  <div>
+                    <strong>
+                      {item.action} {item.entity_type}
+                    </strong>
+                    <span>
+                      {item.entity_id} · {item.first_name} {item.last_name}
+                    </span>
+                  </div>
+                  <span>{new Date(item.created_at).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "requests-messages" && <AdminLaunchPanel view="messages" />}
     </Page>
   )
 }
@@ -3879,26 +5530,37 @@ function ActivationVipCardPage({ user }: { user: SessionUser }) {
   const [card, setCard] = useState<Card | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
+
   const loadCard = () =>
     api<{ card: Card }>("/me/vip-card")
+
       .then((result) => setCard(result.card))
+
       .catch((e) => setError(e.message))
+
   useEffect(() => {
     if (user.verified) void loadCard()
   }, [user.verified])
+
   const issueWalletPass = async () => {
     setBusy(true)
+
     setError("")
+
     try {
       const result = await post<{
         status: Card["walletStatus"]
+
         downloadUrl?: string | null
       }>("/me/wallet-pass")
+
       setCard((current) =>
         current
           ? {
               ...current,
+
               walletStatus: result.status,
+
               walletDownloadUrl:
                 result.downloadUrl || current.walletDownloadUrl,
             }
@@ -3906,11 +5568,13 @@ function ActivationVipCardPage({ user }: { user: SessionUser }) {
       )
     } catch (e) {
       setError((e as Error).message)
+
       await loadCard()
     } finally {
       setBusy(false)
     }
   }
+
   return (
     <Page title="Your VIP Card" narrow>
       {!user.verified ? (
@@ -3991,56 +5655,84 @@ function ActivationProfilePage({
     [notice, setNotice] = useState(""),
     [editing, setEditing] = useState(false),
     [updatingEmail, setUpdatingEmail] = useState(false)
+
   const load = () =>
     Promise.all([
       api<{ profile: Profile }>("/me"),
-      api<{ activations?: any[], reports?: any[] }>("/me/activations").catch(
+
+      api<{ activations?: any[]; reports?: any[] }>("/me/activations").catch(
         () => ({ activations: [], reports: [] }),
       ),
     ])
+
       .then(([profileResult, activityResult]) => {
         setProfile(profileResult.profile)
+
         setRecords(activityResult.activations || activityResult.reports || [])
       })
+
       .catch((e) => setError(e.message))
+
   useEffect(() => {
     void load()
   }, [])
+
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setError("")
+
     const data = new FormData(event.currentTarget)
+
     try {
       await patch("/me", {
         firstName: data.get("firstName"),
+
         lastName: data.get("lastName"),
+
         mobile: data.get("mobile") || null,
+
         city: data.get("city"),
+
         smsConsent: false,
+
         emailUpdates: profile?.email_updates ?? false,
       })
+
       await load()
+
       setEditing(false)
+
       setNotice("Personal information updated.")
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   const toggleEmailUpdates = async () => {
     if (!profile) return
+
     setUpdatingEmail(true)
+
     setError("")
+
     try {
       const emailUpdates = !profile.email_updates
+
       await patch("/me/email-updates", { emailUpdates })
+
       setProfile({ ...profile, email_updates: emailUpdates })
-      setNotice(emailUpdates ? "Email updates are on." : "Email updates are off.")
+
+      setNotice(
+        emailUpdates ? "Email updates are on." : "Email updates are off.",
+      )
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setUpdatingEmail(false)
     }
   }
+
   if (!profile)
     return (
       <Page title="Teacher Profile">
@@ -4048,6 +5740,7 @@ function ActivationProfilePage({
         {error && <Notice kind="error">{error}</Notice>}
       </Page>
     )
+
   return (
     <Page title="Teacher Profile">
       <section className="profile-hero">
@@ -4087,7 +5780,10 @@ function ActivationProfilePage({
       </section>
       {notice && <Notice kind="success">{notice}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
-      <section className="communication-status" aria-label="Communication preferences">
+      <section
+        className="communication-status"
+        aria-label="Communication preferences"
+      >
         <button
           className="email-update-control"
           type="button"
@@ -4096,7 +5792,9 @@ function ActivationProfilePage({
           onClick={() => void toggleEmailUpdates()}
         >
           <span>Email updates</span>
-          <strong>{updatingEmail ? "Saving…" : profile.email_updates ? "On" : "Off"}</strong>
+          <strong>
+            {updatingEmail ? "Saving…" : profile.email_updates ? "On" : "Off"}
+          </strong>
         </button>
       </section>
       {editing ? (
@@ -4156,9 +5854,12 @@ function ActivationProfilePage({
             variant="soft"
             onClick={async () => {
               setError("")
+
               try {
                 await post("/me/unsubscribe")
+
                 await load()
+
                 setNotice("You have been unsubscribed from email updates.")
               } catch (e) {
                 setError((e as Error).message)
@@ -4205,38 +5906,52 @@ function ActivationProfilePage({
 function ActivationSupport() {
   const [query, setQuery] = useState(""),
     [open, setOpen] = useState(0)
+
   const faqs = [
     {
       question: "How do I activate an in-person offer?",
+
       answer:
         "Open a deal, choose the participating location, and tap Use Deal. TeachersVIP requests your location and unlocks the offer only when you are within the approved business radius.",
     },
+
     {
       question: "What does Location Verified mean?",
+
       answer:
         "It means TeachersVIP confirmed a current location signal near the selected business and recorded a Verified On-Site Deal Activation. It does not confirm a completed purchase.",
     },
+
     {
       question: "How do online offers work?",
+
       answer:
         "Online offers use the same controlled activation flow without requesting geolocation. The activation is recorded as online offer access.",
     },
+
     {
       question: "What email can I use for verification?",
+
       answer:
         "Use any valid email address. During the pilot, confirming ownership is enough; educator-only domain checks can be activated later, sending shared, personal, and unknown domains to manual review.",
     },
+
     {
       question: "Is the VIP Card still available?",
+
       answer:
         "Yes. Your VIP Card remains in navigation as proof of educator status, while Use Deal is the primary way to track offer activations.",
     },
   ]
+
   const shown = faqs.filter((item) =>
     `${item.question} ${item.answer}`
+
       .toLowerCase()
+
       .includes(query.toLowerCase()),
   )
+
   return (
     <Page title="Help & Support" narrow>
       <section className="support-intro">
@@ -4263,6 +5978,7 @@ function ActivationSupport() {
       <section className="faq-list">
         {shown.map((item, index) => {
           const expanded = open === index && !query
+
           return (
             <article
               className={`faq ${expanded ? "open" : ""}`}
@@ -4305,26 +6021,38 @@ function ActivationSupport() {
 
 function DomainReviewForm({
   domain,
+
   onChanged,
 }: {
   domain: DomainReview
+
   onChanged: () => Promise<void>
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("")
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
     setBusy(true)
+
     setError("")
+
     const data = new FormData(event.currentTarget)
+
     try {
       await patch(`/admin/domains/${domain.id}`, {
         classification: data.get("classification"),
+
         decision: data.get("decision"),
+
         eligibleRole: data.get("eligibleRole") || null,
+
         evidence: data.get("evidence") || null,
+
         evidenceUrl: data.get("evidenceUrl") || null,
       })
+
       await onChanged()
     } catch (e) {
       setError((e as Error).message)
@@ -4332,6 +6060,7 @@ function DomainReviewForm({
       setBusy(false)
     }
   }
+
   return (
     <form className="domain-review-form form-grid" onSubmit={submit}>
       <div>
@@ -4392,131 +6121,208 @@ function DomainReviewForm({
   )
 }
 
-function AdminOperationsPage() {
+function AdminOperationsPage({ view }: { view: string }) {
+  const [loading, setLoading] = useState(true)
+
   const [queue, setQueue] = useState<VerificationCase[]>([]),
     [metrics, setMetrics] = useState({
       verifiedOnSiteActivations: 0,
+
       uniqueEducators: 0,
+
       repeatUsage: 0,
+
       onlineOfferAccesses: 0,
+
       deniedOnSiteAttempts: 0,
     }),
     [activity, setActivity] = useState<ActivationMetric[]>([]),
-    [activationFilters, setActivationFilters] = useState<ActivationFilterState>({
-      dateFrom: "",
-      dateTo: "",
-      businessId: "",
-      locationId: "",
-    }),
-    [activationFilterOptions, setActivationFilterOptions] = useState<ActivationAnalytics["filters"]>({
-      businesses: [],
-      locations: [],
-    }),
+    [activationFilters, setActivationFilters] = useState<ActivationFilterState>(
+      {
+        dateFrom: "",
+
+        dateTo: "",
+
+        businessId: "",
+
+        locationId: "",
+      },
+    ),
+    [activationFilterOptions, setActivationFilterOptions] =
+      useState<ActivationAnalytics["filters"]>({
+        businesses: [],
+
+        locations: [],
+      }),
     [domains, setDomains] = useState<DomainReview[]>([]),
     [reviewNotes, setReviewNotes] = useState<Record<string, string>>({}),
-    [creatorSubmissions, setCreatorSubmissions] = useState<CreatorNetworkSubmission[]>([]),
-    [creatorFilterOptions, setCreatorFilterOptions] = useState<CreatorNetworkFilters>({
-      cities: [],
-      platforms: [],
-      niches: [],
-      followerRanges: [],
-    }),
+    [creatorSubmissions, setCreatorSubmissions] =
+      useState<CreatorNetworkSubmission[]>([]),
+    [creatorFilterOptions, setCreatorFilterOptions] =
+      useState<CreatorNetworkFilters>({
+        cities: [],
+
+        platforms: [],
+
+        niches: [],
+
+        followerRanges: [],
+      }),
     [creatorFilters, setCreatorFilters] = useState<CreatorNetworkFilterState>({
       city: "",
+
       platform: "",
+
       niche: "",
+
       followerRange: "",
+
       status: "",
     }),
     [creatorUpdateId, setCreatorUpdateId] = useState<string | null>(null),
     [businessReviews, setBusinessReviews] = useState<AdminBusinessReview[]>([]),
-    [reviewFilter, setReviewFilter] = useState<"" | AdminBusinessReview["status"]>("pending"),
+    [reviewFilter, setReviewFilter] =
+      useState<"" | AdminBusinessReview["status"]>("pending"),
     [reviewUpdateId, setReviewUpdateId] = useState<string | null>(null),
     [error, setError] = useState(""),
     [message, setMessage] = useState("")
+
   const loadCreators = async (filters = creatorFilters) => {
     const query = new URLSearchParams()
+
     Object.entries(filters).forEach(([key, value]) => {
       if (value) query.set(key, value)
     })
+
     const result = await api<{
       submissions: CreatorNetworkSubmission[]
+
       filters: CreatorNetworkFilters
     }>(`/admin/creator-network${query.size ? `?${query.toString()}` : ""}`)
+
     setCreatorSubmissions(result.submissions)
+
     setCreatorFilterOptions(result.filters)
   }
+
   const loadActivationAnalytics = async (filters = activationFilters) => {
     const query = new URLSearchParams()
+
     Object.entries(filters).forEach(([key, value]) => {
       if (value) query.set(key, value)
     })
+
     const result = await api<ActivationAnalytics>(
       `/admin/activation-analytics${query.size ? `?${query.toString()}` : ""}`,
     )
+
     setMetrics({
       verifiedOnSiteActivations: result.metrics.verified_on_site_activations,
+
       uniqueEducators: result.metrics.unique_educators,
+
       repeatUsage: result.metrics.repeat_usage,
+
       onlineOfferAccesses: result.metrics.online_offer_accesses,
+
       deniedOnSiteAttempts: result.metrics.denied_on_site_attempts,
     })
+
     setActivity(result.activity)
+
     setActivationFilterOptions(result.filters)
   }
+
   const loadBusinessReviews = async (status = reviewFilter) => {
     const query = status ? `?status=${encodeURIComponent(status)}` : ""
-    const result = await api<{ reviews: AdminBusinessReview[] }>(`/admin/business-reviews${query}`)
+
+    const result = await api<{ reviews: AdminBusinessReview[] }>(
+      `/admin/business-reviews${query}`,
+    )
+
     setBusinessReviews(result.reviews)
   }
+
   const load = async () => {
     try {
       const [result, domainResult] = await Promise.all([
         api<{
           verificationQueue?: VerificationCase[]
+
           metrics?: Partial<typeof metrics>
+
           activationMetrics?: ActivationMetric[]
         }>("/admin/overview"),
+
         api<{ domains: DomainReview[] }>("/admin/domains"),
       ])
+
       setQueue(result.verificationQueue || [])
+
       setMetrics((current) => ({ ...current, ...result.metrics }))
+
       setActivity(result.activationMetrics || [])
+
       setDomains(domainResult.domains)
-      await Promise.all([loadCreators(), loadActivationAnalytics(), loadBusinessReviews()])
+
+      await Promise.all([
+        loadCreators(),
+        loadActivationAnalytics(),
+        loadBusinessReviews(),
+      ])
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      setLoading(false)
     }
   }
+
   useEffect(() => {
     void load()
   }, [])
+
   const changeCreatorFilter = (
     key: keyof CreatorNetworkFilterState,
+
     value: CreatorNetworkFilterState[keyof CreatorNetworkFilterState],
   ) => {
     const next = { ...creatorFilters, [key]: value }
+
     setCreatorFilters(next)
+
     void loadCreators(next).catch((e) => setError((e as Error).message))
   }
+
   const changeActivationFilter = (
     key: keyof ActivationFilterState,
+
     value: string,
   ) => {
     const next = { ...activationFilters, [key]: value }
+
     if (key === "businessId") next.locationId = ""
+
     setActivationFilters(next)
-    void loadActivationAnalytics(next).catch((e) => setError((e as Error).message))
+
+    void loadActivationAnalytics(next).catch((e) =>
+      setError((e as Error).message),
+    )
   }
+
   const updateCreatorStatus = async (
     submission: CreatorNetworkSubmission,
+
     status: CreatorNetworkSubmission["status"],
   ) => {
     setCreatorUpdateId(submission.id)
+
     setError("")
+
     try {
       await patch(`/admin/creator-network/${submission.id}`, { status })
+
       setMessage(`Creator submission marked ${status.replace(/_/g, " ")}.`)
+
       await loadCreators()
     } catch (e) {
       setError((e as Error).message)
@@ -4524,15 +6330,21 @@ function AdminOperationsPage() {
       setCreatorUpdateId(null)
     }
   }
+
   const updateBusinessReview = async (
     review: AdminBusinessReview,
+
     status: "approved" | "rejected",
   ) => {
     setReviewUpdateId(review.id)
+
     setError("")
+
     try {
       await patch(`/admin/business-reviews/${review.id}`, { status })
+
       setMessage(`Business feedback ${status}.`)
+
       await loadBusinessReviews()
     } catch (e) {
       setError((e as Error).message)
@@ -4540,19 +6352,27 @@ function AdminOperationsPage() {
       setReviewUpdateId(null)
     }
   }
+
   const reviewVerification = async (
     item: VerificationCase,
+
     action: "approve" | "reject" | "request_information",
   ) => {
     const notes = (reviewNotes[item.id] || "").trim()
+
     if (notes.length < 2) {
       setError("Add review notes before deciding this verification case.")
+
       return
     }
+
     setError("")
+
     setMessage("")
+
     try {
       await patch(`/admin/verifications/${item.id}`, { action, notes })
+
       setMessage(
         `Verification case ${
           action === "approve"
@@ -4562,346 +6382,600 @@ function AdminOperationsPage() {
               : "kept in review with an information request"
         }.`,
       )
+
       setReviewNotes((current) => ({ ...current, [item.id]: "" }))
+
       await load()
     } catch (e) {
       setError((e as Error).message)
     }
   }
+
   return (
-    <>
-      <Page title="Operations Dashboard">
-        <div className="admin-intro">
-          <div>
-            <span>VERIFICATION &amp; ACTIVATION OPERATIONS</span>
-            <h2>Evidence-led educator access</h2>
-            <p>
-              Review eligibility decisions and monitor successful
-              location-verified activations without calling them purchases.
-            </p>
-          </div>
-          <ShieldCheck size={42} weight="duotone" />
-        </div>
-        {error && <Notice kind="error">{error}</Notice>}
-        {message && <Notice kind="success">{message}</Notice>}
-        <section className="admin-card activation-analytics-card">
-          <div className="admin-card-heading">
-            <MapPin size={22} />
-            <div>
-              <h2>Activation reporting filters</h2>
-              <p>Filter verified on-site activations by date, business, and location. Online accesses and denied attempts remain separate.</p>
-            </div>
-          </div>
-          <div className="activation-analytics-filters">
-            <label className="field">
-              <span>From</span>
-              <input type="date" value={activationFilters.dateFrom} onChange={(event) => changeActivationFilter("dateFrom", event.target.value)} />
-            </label>
-            <label className="field">
-              <span>To</span>
-              <input type="date" value={activationFilters.dateTo} onChange={(event) => changeActivationFilter("dateTo", event.target.value)} />
-            </label>
-            <label className="field">
-              <span>Business</span>
-              <select value={activationFilters.businessId} onChange={(event) => changeActivationFilter("businessId", event.target.value)}>
-                <option value="">All businesses</option>
-                {activationFilterOptions.businesses.map((business) => <option key={business.id} value={business.id}>{business.name}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>Location</span>
-              <select value={activationFilters.locationId} onChange={(event) => changeActivationFilter("locationId", event.target.value)}>
-                <option value="">All locations</option>
-                {activationFilterOptions.locations.filter((location) => !activationFilters.businessId || location.business_id === activationFilters.businessId).map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-              </select>
-            </label>
-          </div>
-        </section>
-        <section className="stats">
-          <div>
-            <strong>{metrics.verifiedOnSiteActivations}</strong>
-            <span>VERIFIED ON-SITE DEAL ACTIVATIONS</span>
-          </div>
-          <div>
-            <strong>{metrics.uniqueEducators}</strong>
-            <span>UNIQUE EDUCATORS</span>
-          </div>
-          <div>
-            <strong>{metrics.repeatUsage}</strong>
-            <span>REPEAT USAGE</span>
-          </div>
-          <div>
-            <strong>{metrics.onlineOfferAccesses}</strong>
-            <span>ONLINE OFFER ACCESSES</span>
-          </div>
-          <div>
-            <strong>{metrics.deniedOnSiteAttempts}</strong>
-            <span>DENIED ON-SITE ATTEMPTS</span>
-          </div>
-        </section>
-        <section className="admin-card admin-table-card">
-          <div className="admin-card-heading">
-            <ShieldCheck size={22} />
-            <div>
-              <h2>Educator-domain registry</h2>
-              <p>
-                Automatic approval is available only after a domain is reviewed
-                as staff/faculty-only with evidence and an eligible role.
-              </p>
-            </div>
-          </div>
-          <div className="domain-review-list">
-            {domains.map((domain) => (
-              <DomainReviewForm
-                key={domain.id}
-                domain={domain}
-                onChanged={load}
-              />
-            ))}
-            {!domains.length && (
-              <p className="admin-empty">
-                Import an official NCES or Department of Education release to
-                begin domain review.
-              </p>
-            )}
-          </div>
-        </section>
-        <section className="admin-card admin-table-card">
-          <div className="admin-card-heading">
-            <ShieldCheck size={22} />
-            <div>
-              <h2>Educator verification queue</h2>
-              <p>
-                Shared university, unknown, and personal domains go to manual
-                review.
-              </p>
-            </div>
-          </div>
-          <div className="admin-table">
-            {queue.map((item) => (
-              <div className="admin-row verification-review-row" key={item.id}>
-                <div>
-                  <strong>{item.email}</strong>
-                  <span>
-                    {item.role} · {item.domain}
-                  </span>
-                  <span>
-                    {item.reason ||
-                      item.classification ||
-                      "Manual review required"}
-                    {item.source ? ` · ${item.source}` : ""}
-                  </span>
-                </div>
-                <span className="admin-status">{item.status}</span>
-                <label className="field admin-review-notes">
-                  <span>Review notes</span>
-                  <textarea
-                    value={reviewNotes[item.id] || ""}
-                    onChange={(event) =>
-                      setReviewNotes((current) => ({
-                        ...current,
-                        [item.id]: event.target.value,
-                      }))
-                    }
-                    placeholder="Record the evidence and reason for this decision"
-                  />
-                </label>
-                <div className="admin-review-actions">
-                  <button
-                    className="action action-gold"
-                    onClick={() => void reviewVerification(item, "approve")}
-                  >
-                    Approve educator
-                  </button>
-                  <button
-                    className="action action-soft"
-                    onClick={() =>
-                      void reviewVerification(item, "request_information")
-                    }
-                  >
-                    Request information
-                  </button>
-                  <button
-                    className="action action-danger"
-                    onClick={() => void reviewVerification(item, "reject")}
-                  >
-                    Reject
-                  </button>
-                </div>
+    <Page
+      title={
+        ADMIN_SECTIONS.find((section) => section.path === view)?.label ||
+        "Admin"
+      }
+    >
+      <AdminNavigation section={view} />
+      {loading && (
+        <p className="admin-empty" role="status">
+          Loading admin information…
+        </p>
+      )}
+      {error && <Notice kind="error">{error}</Notice>}
+      {message && <Notice kind="success">{message}</Notice>}
+      {view === "activity" && (
+        <>
+          <section className="admin-card activation-analytics-card">
+            <div className="admin-card-heading">
+              <MapPin size={22} />
+              <div>
+                <h2>Activation reporting filters</h2>
+                <p>
+                  Filter verified on-site activations by date, business, and
+                  location. Online accesses and denied attempts remain separate.
+                </p>
               </div>
-            ))}
-            {!queue.length && (
-              <p className="admin-empty">No pending verification cases.</p>
-            )}
-          </div>
-        </section>
-        <section className="admin-card admin-table-card">
-          <div className="admin-card-heading">
-            <MapPin size={22} />
-            <div>
-              <h2>Activity by business and location</h2>
-              <p>
-                Successful in-person proximity checks only. Repeat usage is every
-                successful activation after an educator’s first at that business
-                and location in the selected period.
-              </p>
             </div>
-          </div>
-          <div className="admin-table">
-            {activity.map((item) => (
-              <div
-                className="admin-row"
-                key={`${item.business_name}-${item.location_name || "all"}`}
-              >
-                <div>
-                  <strong>{item.business_name}</strong>
-                  <span>{item.location_name || "All locations"}</span>
-                </div>
-                <span>
-                  {item.activations} activations · {item.unique_educators}{" "}
-                  unique · {item.repeat_usage} repeat
-                </span>
+            <div className="activation-analytics-filters">
+              <label className="field">
+                <span>From</span>
+                <input
+                  type="date"
+                  value={activationFilters.dateFrom}
+                  onChange={(event) =>
+                    changeActivationFilter("dateFrom", event.target.value)
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>To</span>
+                <input
+                  type="date"
+                  value={activationFilters.dateTo}
+                  onChange={(event) =>
+                    changeActivationFilter("dateTo", event.target.value)
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Business</span>
+                <select
+                  value={activationFilters.businessId}
+                  onChange={(event) =>
+                    changeActivationFilter("businessId", event.target.value)
+                  }
+                >
+                  <option value="">All businesses</option>
+                  {activationFilterOptions.businesses.map((business) => (
+                    <option key={business.id} value={business.id}>
+                      {business.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Location</span>
+                <select
+                  value={activationFilters.locationId}
+                  onChange={(event) =>
+                    changeActivationFilter("locationId", event.target.value)
+                  }
+                >
+                  <option value="">All locations</option>
+                  {activationFilterOptions.locations
+                    .filter(
+                      (location) =>
+                        !activationFilters.businessId ||
+                        location.business_id === activationFilters.businessId,
+                    )
+                    .map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+          </section>
+        </>
+      )}
+      {view === "activity" && (
+        <>
+          <section className="stats">
+            <div>
+              <strong>{metrics.verifiedOnSiteActivations}</strong>
+              <span>VERIFIED ON-SITE DEAL ACTIVATIONS</span>
+            </div>
+            <div>
+              <strong>{metrics.uniqueEducators}</strong>
+              <span>UNIQUE EDUCATORS</span>
+            </div>
+            <div>
+              <strong>{metrics.repeatUsage}</strong>
+              <span>REPEAT USAGE</span>
+            </div>
+            <div>
+              <strong>{metrics.onlineOfferAccesses}</strong>
+              <span>ONLINE OFFER ACCESSES</span>
+            </div>
+            <div>
+              <strong>{metrics.deniedOnSiteAttempts}</strong>
+              <span>DENIED ON-SITE ATTEMPTS</span>
+            </div>
+          </section>
+        </>
+      )}
+      {view === "educators" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <ShieldCheck size={22} />
+              <div>
+                <h2>Approved Email Domains</h2>
+                <p>
+                  Automatic approval is available only after a domain is
+                  reviewed as staff/faculty-only with evidence and an eligible
+                  role.
+                </p>
               </div>
-            ))}
-            {!activity.length && (
-              <p className="admin-empty">
-                No verified on-site activations yet.
-              </p>
-            )}
-          </div>
-        </section>
-        <section className="admin-card admin-table-card">
-          <div className="admin-card-heading">
-            <Star size={22} weight="fill" />
-            <div>
-              <h2>Business review moderation</h2>
-              <p>Feedback follows a successful offer activation, is reviewed before public display, and never confirms a purchase.</p>
             </div>
-            <select className="admin-heading-filter" value={reviewFilter} onChange={(event) => {
-              const status = event.target.value as "" | AdminBusinessReview["status"]
-              setReviewFilter(status)
-              void loadBusinessReviews(status).catch((e) => setError((e as Error).message))
-            }}>
-              <option value="">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-          <div className="business-review-admin-list">
-            {businessReviews.map((review) => (
-              <article className="business-review-admin" key={review.id}>
-                <div>
-                  <strong>{review.business_name}</strong>
-                  <span>{review.first_name} {review.last_name} · {review.rating}/5 · {review.activation_type === "verified_on_site" ? "verified on-site activation" : "online offer access"}</span>
-                  <p>{review.review_text}</p>
-                </div>
-                <span className={`creator-status creator-status-${review.status === "pending" ? "new" : review.status === "approved" ? "contacted" : "archived"}`}>{review.status}</span>
-                {review.status !== "rejected" && (
-                  <div className="admin-review-actions">
-                    {review.status === "pending" && <button className="action action-gold" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "approved")}>Approve</button>}
-                    <button className="action action-danger" disabled={reviewUpdateId === review.id} onClick={() => void updateBusinessReview(review, "rejected")}>{review.status === "approved" ? 'Remove review' : 'Reject'}</button>
-                  </div>
-                )}
-              </article>
-            ))}
-            {!businessReviews.length && <p className="admin-empty">No business feedback matches this status.</p>}
-          </div>
-        </section>
-        <section className="admin-card admin-table-card creator-admin-card">
-          <div className="admin-card-heading">
-            <UserCircle size={22} />
-            <div>
-              <h2>Teacher Creator Network</h2>
-              <p>
-                Private interest submissions only. This does not create a
-                business campaign or creator commitment.
-              </p>
+            <div className="domain-review-list">
+              {domains.map((domain) => (
+                <DomainReviewForm
+                  key={domain.id}
+                  domain={domain}
+                  onChanged={load}
+                />
+              ))}
+              {!domains.length && (
+                <p className="admin-empty">
+                  Import an official NCES or Department of Education release to
+                  begin domain review.
+                </p>
+              )}
             </div>
-          </div>
-          <div className="creator-admin-filters" aria-label="Filter creator submissions">
-            <label className="field">
-              <span>City</span>
-              <select value={creatorFilters.city} onChange={(event) => changeCreatorFilter("city", event.target.value)}>
-                <option value="">All cities</option>
-                {creatorFilterOptions.cities.map((city) => <option key={city} value={city}>{city}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>Platform</span>
-              <select value={creatorFilters.platform} onChange={(event) => changeCreatorFilter("platform", event.target.value)}>
-                <option value="">All platforms</option>
-                {creatorFilterOptions.platforms.map((platform) => <option key={platform} value={platform}>{platform}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>Niche</span>
-              <select value={creatorFilters.niche} onChange={(event) => changeCreatorFilter("niche", event.target.value)}>
-                <option value="">All niches</option>
-                {creatorFilterOptions.niches.map((niche) => <option key={niche} value={niche}>{niche}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>Audience size</span>
-              <select value={creatorFilters.followerRange} onChange={(event) => changeCreatorFilter("followerRange", event.target.value)}>
-                <option value="">All audience sizes</option>
-                {creatorFilterOptions.followerRanges.map((range) => <option key={range} value={range}>{range}</option>)}
-              </select>
-            </label>
-            <label className="field">
-              <span>Status</span>
-              <select value={creatorFilters.status} onChange={(event) => changeCreatorFilter("status", event.target.value as CreatorNetworkFilterState["status"])}>
-                <option value="">All statuses</option>
-                <option value="new">New</option>
-                <option value="contacted">Contacted</option>
-                <option value="archived">Archived</option>
-              </select>
-            </label>
-          </div>
-          <div className="creator-submission-list">
-            {creatorSubmissions.map((submission) => (
-              <article className="creator-submission" key={submission.id}>
-                <div className="creator-submission-heading">
+          </section>
+        </>
+      )}
+      {view === "educators" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <ShieldCheck size={22} />
+              <div>
+                <h2>Educator verification queue</h2>
+                <p>
+                  Shared university, unknown, and personal domains go to manual
+                  review.
+                </p>
+              </div>
+            </div>
+            <div className="admin-table">
+              {queue.map((item) => (
+                <div
+                  className="admin-row verification-review-row"
+                  key={item.id}
+                >
                   <div>
-                    <strong>{submission.full_name}</strong>
-                    <span>{submission.city} · {submission.educator_email}</span>
+                    <strong>{item.email}</strong>
+                    <span>
+                      {item.role} · {item.domain}
+                    </span>
+                    <span>
+                      {item.reason ||
+                        item.classification ||
+                        "Manual review required"}
+                      {item.source ? ` · ${item.source}` : ""}
+                    </span>
                   </div>
-                  <span className={`creator-status creator-status-${submission.status}`}>{submission.status}</span>
+                  <span className="admin-status">{item.status}</span>
+                  <label className="field admin-review-notes">
+                    <span>Review notes</span>
+                    <textarea
+                      value={reviewNotes[item.id] || ""}
+                      onChange={(event) =>
+                        setReviewNotes((current) => ({
+                          ...current,
+
+                          [item.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Record the evidence and reason for this decision"
+                    />
+                  </label>
+                  <div className="admin-review-actions">
+                    <button
+                      className="action action-gold"
+                      onClick={() => void reviewVerification(item, "approve")}
+                    >
+                      Approve educator
+                    </button>
+                    <button
+                      className="action action-soft"
+                      onClick={() =>
+                        void reviewVerification(item, "request_information")
+                      }
+                    >
+                      Request information
+                    </button>
+                    <button
+                      className="action action-danger"
+                      onClick={() => void reviewVerification(item, "reject")}
+                    >
+                      Reject
+                    </button>
+                  </div>
                 </div>
-                <dl>
-                  <div><dt>Contact</dt><dd>{submission.contact_information}</dd></div>
-                  <div><dt>Platforms</dt><dd>{submission.platforms.join(" · ")}</dd></div>
-                  <div><dt>Audience</dt><dd>{submission.follower_range}</dd></div>
-                  <div><dt>Niches</dt><dd>{submission.content_niches.join(" · ")}</dd></div>
-                  <div><dt>Social handles</dt><dd>{submission.social_handles}</dd></div>
-                  <div><dt>Interested in</dt><dd>{submission.opportunity_interests.join(" · ")}</dd></div>
-                  <div className="creator-sample"><dt>Sample content</dt><dd>{submission.sample_content}</dd></div>
-                </dl>
-                <div className="creator-submission-actions">
-                  <small>Submitted {new Date(submission.created_at).toLocaleDateString()}</small>
-                  <select
-                    aria-label={`Status for ${submission.full_name}`}
-                    value={submission.status}
-                    disabled={creatorUpdateId === submission.id}
-                    onChange={(event) => void updateCreatorStatus(submission, event.target.value as CreatorNetworkSubmission["status"])}
+              ))}
+              {!queue.length && (
+                <p className="admin-empty">No pending verification cases.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "activity" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <MapPin size={22} />
+              <div>
+                <h2>Activity by business and location</h2>
+                <p>
+                  Successful in-person proximity checks only. Repeat usage is
+                  every successful activation after an educator’s first at that
+                  business and location in the selected period.
+                </p>
+              </div>
+            </div>
+            <div className="admin-table">
+              {activity.map((item) => (
+                <div
+                  className="admin-row"
+                  key={`${item.business_name}-${item.location_name || "all"}`}
+                >
+                  <div>
+                    <strong>{item.business_name}</strong>
+                    <span>{item.location_name || "All locations"}</span>
+                  </div>
+                  <span>
+                    {item.activations} activations · {item.unique_educators}{" "}
+                    unique · {item.repeat_usage} repeat
+                  </span>
+                </div>
+              ))}
+              {!activity.length && (
+                <p className="admin-empty">
+                  No verified on-site activations yet.
+                </p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "reviews-reports" && (
+        <>
+          <section className="admin-card admin-table-card">
+            <div className="admin-card-heading">
+              <Star size={22} weight="fill" />
+              <div>
+                <h2>Business review moderation</h2>
+                <p>
+                  Feedback follows a successful offer activation, is reviewed
+                  before public display, and never confirms a purchase.
+                </p>
+              </div>
+              <select
+                className="admin-heading-filter"
+                value={reviewFilter}
+                onChange={(event) => {
+                  const status = event.target
+                    .value as "" | AdminBusinessReview["status"]
+
+                  setReviewFilter(status)
+
+                  void loadBusinessReviews(status).catch((e) =>
+                    setError((e as Error).message),
+                  )
+                }}
+              >
+                <option value="">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+            <div className="business-review-admin-list">
+              {businessReviews.map((review) => (
+                <article className="business-review-admin" key={review.id}>
+                  <div>
+                    <strong>{review.business_name}</strong>
+                    <span>
+                      {review.first_name} {review.last_name} · {review.rating}/5
+                      ·{" "}
+                      {review.activation_type === "verified_on_site"
+                        ? "verified on-site activation"
+                        : "online offer access"}
+                    </span>
+                    <p>{review.review_text}</p>
+                  </div>
+                  <span
+                    className={`creator-status creator-status-${
+                      review.status === "pending"
+                        ? "new"
+                        : review.status === "approved"
+                          ? "contacted"
+                          : "archived"
+                    }`}
                   >
-                    <option value="new">New</option>
-                    <option value="contacted">Contacted</option>
-                    <option value="archived">Archived</option>
-                  </select>
-                </div>
-              </article>
-            ))}
-            {!creatorSubmissions.length && (
-              <p className="admin-empty">No Creator Network submissions match these filters.</p>
-            )}
-          </div>
-        </section>
-        <AdminLaunchPanel />
-      </Page>
-      <AdminPage />
-    </>
+                    {review.status}
+                  </span>
+                  {review.status !== "rejected" && (
+                    <div className="admin-review-actions">
+                      {review.status === "pending" && (
+                        <button
+                          className="action action-gold"
+                          disabled={reviewUpdateId === review.id}
+                          onClick={() =>
+                            void updateBusinessReview(review, "approved")
+                          }
+                        >
+                          Approve
+                        </button>
+                      )}
+                      <button
+                        className="action action-danger"
+                        disabled={reviewUpdateId === review.id}
+                        onClick={() =>
+                          void updateBusinessReview(review, "rejected")
+                        }
+                      >
+                        {review.status === "approved"
+                          ? "Remove review"
+                          : "Reject"}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+              {!businessReviews.length && (
+                <p className="admin-empty">
+                  No business feedback matches this status.
+                </p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "creator-network" && (
+        <>
+          <section className="admin-card admin-table-card creator-admin-card">
+            <div className="admin-card-heading">
+              <UserCircle size={22} />
+              <div>
+                <h2>Teacher Creator Network</h2>
+                <p>
+                  Private interest submissions only. This does not create a
+                  business campaign or creator commitment.
+                </p>
+              </div>
+            </div>
+            <div
+              className="creator-admin-filters"
+              aria-label="Filter creator submissions"
+            >
+              <label className="field">
+                <span>City</span>
+                <select
+                  value={creatorFilters.city}
+                  onChange={(event) =>
+                    changeCreatorFilter("city", event.target.value)
+                  }
+                >
+                  <option value="">All cities</option>
+                  {creatorFilterOptions.cities.map((city) => (
+                    <option key={city} value={city}>
+                      {city}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Platform</span>
+                <select
+                  value={creatorFilters.platform}
+                  onChange={(event) =>
+                    changeCreatorFilter("platform", event.target.value)
+                  }
+                >
+                  <option value="">All platforms</option>
+                  {creatorFilterOptions.platforms.map((platform) => (
+                    <option key={platform} value={platform}>
+                      {platform}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Niche</span>
+                <select
+                  value={creatorFilters.niche}
+                  onChange={(event) =>
+                    changeCreatorFilter("niche", event.target.value)
+                  }
+                >
+                  <option value="">All niches</option>
+                  {creatorFilterOptions.niches.map((niche) => (
+                    <option key={niche} value={niche}>
+                      {niche}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Audience size</span>
+                <select
+                  value={creatorFilters.followerRange}
+                  onChange={(event) =>
+                    changeCreatorFilter("followerRange", event.target.value)
+                  }
+                >
+                  <option value="">All audience sizes</option>
+                  {creatorFilterOptions.followerRanges.map((range) => (
+                    <option key={range} value={range}>
+                      {range}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Status</span>
+                <select
+                  value={creatorFilters.status}
+                  onChange={(event) =>
+                    changeCreatorFilter(
+                      "status",
+                      event.target.value as CreatorNetworkFilterState["status"],
+                    )
+                  }
+                >
+                  <option value="">All statuses</option>
+                  <option value="new">New</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </label>
+            </div>
+            <div className="creator-submission-list">
+              {creatorSubmissions.map((submission) => (
+                <article className="creator-submission" key={submission.id}>
+                  <div className="creator-submission-heading">
+                    <div>
+                      <strong>{submission.full_name}</strong>
+                      <span>
+                        {submission.city} · {submission.educator_email}
+                      </span>
+                    </div>
+                    <span
+                      className={`creator-status creator-status-${submission.status}`}
+                    >
+                      {submission.status}
+                    </span>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Contact</dt>
+                      <dd>{submission.contact_information}</dd>
+                    </div>
+                    <div>
+                      <dt>Platforms</dt>
+                      <dd>{submission.platforms.join(" · ")}</dd>
+                    </div>
+                    <div>
+                      <dt>Audience</dt>
+                      <dd>{submission.follower_range}</dd>
+                    </div>
+                    <div>
+                      <dt>Niches</dt>
+                      <dd>{submission.content_niches.join(" · ")}</dd>
+                    </div>
+                    <div>
+                      <dt>Social handles</dt>
+                      <dd>{submission.social_handles}</dd>
+                    </div>
+                    <div>
+                      <dt>Interested in</dt>
+                      <dd>{submission.opportunity_interests.join(" · ")}</dd>
+                    </div>
+                    <div className="creator-sample">
+                      <dt>Sample content</dt>
+                      <dd>{submission.sample_content}</dd>
+                    </div>
+                  </dl>
+                  <div className="creator-submission-actions">
+                    <small>
+                      Submitted{" "}
+                      {new Date(submission.created_at).toLocaleDateString()}
+                    </small>
+                    <select
+                      aria-label={`Status for ${submission.full_name}`}
+                      value={submission.status}
+                      disabled={creatorUpdateId === submission.id}
+                      onChange={(event) =>
+                        void updateCreatorStatus(
+                          submission,
+                          event.target
+                            .value as CreatorNetworkSubmission["status"],
+                        )
+                      }
+                    >
+                      <option value="new">New</option>
+                      <option value="contacted">Contacted</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </div>
+                </article>
+              ))}
+              {!creatorSubmissions.length && (
+                <p className="admin-empty">
+                  No Creator Network submissions match these filters.
+                </p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {view === "activity" && (
+        <>
+          <AdminOfferInterests />
+          <AdminLaunchPanel view="analytics" />
+        </>
+      )}
+      {view === "reviews-reports" && <AdminLaunchPanel view="reports" />}
+    </Page>
   )
+}
+
+function AdminRouter({ userId }: { userId: string }) {
+  const pathname = useLocation().pathname
+
+  const view = pathname.slice("/admin/".length)
+
+  if (pathname === "/admin" || pathname === "/admin/")
+    return (
+      <Page title="TeachersVIP Admin">
+        <AdminHomeContent />
+      </Page>
+    )
+
+  if (view === "businesses/new")
+    return <AdminPage key={view} userId={userId} view="add-business" />
+
+  if (view === "deals/new")
+    return <AdminPage key={view} userId={userId} view="create-deal" />
+
+  if (view === "locations/new")
+    return (
+      <Page title="Add Location">
+        <AdminNavigation section="businesses-deals" />
+        <AddLocationContent />
+      </Page>
+    )
+
+  if (["overview", "businesses-deals", "requests-messages"].includes(view))
+    return <AdminPage key={view} userId={userId} view={view} />
+
+  if (
+    ["educators", "activity", "reviews-reports", "creator-network"].includes(
+      view,
+    )
+  )
+    return <AdminOperationsPage key={view} view={view} />
+
+  return <Navigate to="/admin" replace />
 }
 
 function AppRoutes() {
@@ -4909,24 +6983,33 @@ function AppRoutes() {
     [user, setUser] = useState<SessionUser | null>(null),
     navigate = useNavigate(),
     routeLocation = useLocation()
+
   const refresh = useCallback(async () => {
     try {
       const r = await api<{ user: SessionUser | null }>("/auth/session")
+
       setUser(r.user)
+
       return r.user
     } catch {
       setUser(null)
+
       return null
     }
   }, [])
+
   useEffect(() => {
     refresh().finally(() => setLoading(false))
   }, [refresh])
+
   const signOut = async () => {
     await post("/auth/sign-out")
+
     setUser(null)
+
     navigate("/sign-in")
   }
+
   if (loading)
     return (
       <div className="splash">
@@ -4934,8 +7017,24 @@ function AppRoutes() {
         <span>Loading TeachersVIP…</span>
       </div>
     )
-  if (user && !user.verified && !['/verify','/creator-network','/about','/contact','/support','/privacy','/terms','/unsubscribe'].includes(routeLocation.pathname))
+
+  if (
+    user &&
+    !user.verified &&
+    !routeLocation.pathname.startsWith("/deals/") &&
+    ![
+      "/verify",
+      "/creator-network",
+      "/about",
+      "/contact",
+      "/support",
+      "/privacy",
+      "/terms",
+      "/unsubscribe",
+    ].includes(routeLocation.pathname)
+  )
     return <Navigate to="/verify" replace />
+
   return user ? (
     <Shell user={user} onSignOut={signOut}>
       <Routes>
@@ -4961,15 +7060,24 @@ function AppRoutes() {
         <Route path="/contact" element={<ContactPage embedded />} />
         <Route path="/about" element={<AboutPage embedded />} />
         <Route path="/unsubscribe" element={<UnsubscribePage embedded />} />
-        <Route path="/privacy" element={<InformationPage kind="privacy" embedded />} />
-        <Route path="/terms" element={<InformationPage kind="terms" embedded />} />
-        <Route path="/creator-network" element={<CreatorNetworkPage user={user} />} />
+        <Route
+          path="/privacy"
+          element={<InformationPage kind="privacy" embedded />}
+        />
+        <Route
+          path="/terms"
+          element={<InformationPage kind="terms" embedded />}
+        />
+        <Route
+          path="/creator-network"
+          element={<CreatorNetworkPage user={user} />}
+        />
         <Route path="/partner" element={<StructuredPartner />} />
         <Route
-          path="/admin"
+          path="/admin/*"
           element={
             user.is_superadmin ? (
-              <AdminOperationsPage />
+              <AdminRouter userId={user.id} />
             ) : (
               <Navigate to="/deals" replace />
             )
@@ -4986,7 +7094,15 @@ function AppRoutes() {
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/about" element={<AboutPage />} />
       <Route path="/unsubscribe" element={<UnsubscribePage />} />
-      <Route path="/support" element={<><ActivationSupport /><SiteFooter /></>} />
+      <Route
+        path="/support"
+        element={
+          <>
+            <ActivationSupport />
+            <SiteFooter />
+          </>
+        }
+      />
       <Route path="/privacy" element={<InformationPage kind="privacy" />} />
       <Route path="/terms" element={<InformationPage kind="terms" />} />
       <Route path="/verify" element={<PublicVerify />} />
@@ -4996,12 +7112,25 @@ function AppRoutes() {
         element={<AdminRegister refresh={refresh} />}
       />
       <Route path="/sign-in" element={<SignIn refresh={refresh} />} />
+      <Route
+        path="/deals/:id"
+        element={
+          <div className="public-offer-page">
+            <div className="public-offer-header">
+              <PublicHeader />
+            </div>
+            <ActivationDealDetail user={null} />
+            <SiteFooter />
+          </div>
+        }
+      />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
+
 export default function App() {
   return (
     <BrowserRouter>
