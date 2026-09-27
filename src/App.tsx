@@ -80,7 +80,6 @@ import {
 } from "./lib/admin-form"
 
 import {
-  AdminHomeContent,
   AdminNavigation,
   ADMIN_SECTIONS,
   AddLocationContent,
@@ -4512,7 +4511,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
 
   useEffect(() => {
     if (
-      view !== "create-deal" ||
+      view !== "add-business" ||
       !businesses.length ||
       !dealForm.current ||
       restoredDeal.current
@@ -4545,8 +4544,8 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
   }, [businesses.length, view, savedDeal])
 
   useEffect(() => {
-    if (view === "create-deal" && restoredDeal.current) saveDealDraft()
-  }, [dealImage])
+    if (view === "add-business" && restoredDeal.current) saveDealDraft()
+  }, [dealImage, offerBusinessId])
 
   useEffect(() => {
     const timer = window.setInterval(
@@ -4630,12 +4629,9 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
 
       setBusinessMessage("Business added successfully.")
 
-      if (params.get("returnTo") === "/admin/deals/new") {
-        navigate(
-          `/admin/deals/new?businessId=${encodeURIComponent(addedBusiness.businessId || String(d.get("id")))}`,
-        )
-        return
-      }
+      setOfferBusinessId(addedBusiness.businessId || String(d.get("id")))
+      setBusinessMessage("Business added. Continue below to create its deal, or return to Business Partners.")
+      window.setTimeout(() => dealForm.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100)
 
       await load().catch(() =>
         setBusinessMessage(
@@ -4829,19 +4825,17 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
       title={
         view === "add-business"
           ? "Add Business"
-          : view === "create-deal"
-            ? "Create Deal"
             : view === "requests-messages"
               ? "Requests & Messages"
               : view === "overview"
                 ? "Overview"
-                : "Businesses & Deals"
+                : "Business Partners"
       }
     >
       <AdminNavigation
         section={
           ["add-business", "create-deal"].includes(view)
-            ? "businesses-deals"
+            ? "businesses/new"
             : view
         }
       />
@@ -4857,7 +4851,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
           ←{" "}
           {params.get("returnTo") === "/admin/deals/new"
             ? "Back to deal draft"
-            : "Back to Businesses & Deals"}
+            : "Back to Business Partners"}
         </Link>
       )}
       {view === "businesses-deals" && (
@@ -4899,9 +4893,11 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
           </section>
         </>
       )}
+      {view === "add-business" && <p className="admin-empty">Add the business, then create its deal below with all offer and redemption questions. You can also create a deal for an existing partner.</p>}
       <section className="admin-forms admin-single-form">
         {view === "add-business" && (
           <form
+            id="business-details"
             className="admin-card form-grid"
             ref={businessDraft.ref}
             onChange={businessDraft.save}
@@ -5023,8 +5019,9 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
             </Button>
           </form>
         )}
-        {view === "create-deal" && (
+        {view === "add-business" && (
           <form
+            id="deal-details"
             className="admin-card form-grid"
             ref={dealForm}
             onChange={() => window.setTimeout(saveDealDraft, 0)}
@@ -5034,7 +5031,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
             <div className="admin-card-heading">
               <Tag size={22} />
               <div>
-                <h2>Offer details</h2>
+                <h2>Create Deal</h2>
                 <p>New deals publish immediately after saving.</p>
               </div>
             </div>
@@ -5096,14 +5093,8 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
               </select>
             </label>
             <p className="field-note">
-              Every deal belongs to a business.{" "}
-              <Link
-                to="/admin/businesses/new?returnTo=/admin/deals/new"
-                onClick={saveDealDraft}
-              >
-                Add Business
-              </Link>{" "}
-              if it is not listed yet. Your deal draft is saved when you leave.
+              Select an existing business, or <a href="#business-details">add a business above</a>.
+              A newly saved business is selected here automatically.
             </p>
             {!interestOffer && offerChannel === "in_person" && (
               <label className="field">
@@ -5344,7 +5335,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
             <div className="admin-card-heading">
               <Storefront size={22} />
               <div>
-                <h2>Businesses</h2>
+                <h2>Business Partners</h2>
                 <p>Hide a business to remove all of its deals from Discover.</p>
               </div>
             </div>
@@ -6947,11 +6938,7 @@ function AdminRouter({ userId }: { userId: string }) {
   const view = pathname.slice("/admin/".length)
 
   if (pathname === "/admin" || pathname === "/admin/")
-    return (
-      <Page title="TeachersVIP Admin">
-        <AdminHomeContent />
-      </Page>
-    )
+    return <Navigate to="/admin/overview" replace />
 
   if (view === "businesses/new")
     return <AdminPage key={view} userId={userId} view="add-business" />
@@ -6963,7 +6950,7 @@ function AdminRouter({ userId }: { userId: string }) {
       <AdminBusiness key={view} id={decodeURIComponent(businessRoute[1])} editing={Boolean(businessRoute[2])} />
     </Page>
   if (view === "deals/new")
-    return <AdminPage key={view} userId={userId} view="create-deal" />
+    return <Navigate to={`/admin/businesses/new${window.location.search}#deal-details`} replace />
 
   if (view === "locations/new")
     return (

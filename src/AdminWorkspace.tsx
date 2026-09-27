@@ -27,6 +27,7 @@ import {
 } from "../shared/business-hours"
 
 export const ADMIN_SECTIONS = [
+
   {
     path: "overview",
     label: "Overview",
@@ -42,8 +43,15 @@ export const ADMIN_SECTIONS = [
   },
 
   {
+    path: "businesses/new",
+    label: "Add Business",
+    description: "Business details, deals and offer questions",
+    icon: Storefront,
+  },
+
+  {
     path: "businesses-deals",
-    label: "Businesses & Deals",
+    label: "Business Partners",
     description: "Businesses, locations, offers and publishing",
     icon: Storefront,
   },

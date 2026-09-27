@@ -65,7 +65,7 @@ export function AdminBusiness({ id, editing }: { id: string; editing: boolean })
   }
 
   return <section className="admin-card admin-business-detail">
-    <Link to="/admin/businesses-deals">← Businesses &amp; Deals</Link>
+    <Link to="/admin/businesses-deals">← Business Partners</Link>
     {loading ? <p role="status">Loading business…</p> : !business ? <p role="alert">{error}</p> : editing ? <>
       <h2>Edit {business.name}</h2>
       <p>Update the business details and weekly hours. Participating locations are managed separately.</p>
