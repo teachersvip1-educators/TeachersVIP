@@ -1,3 +1,4 @@
+import { AdminBusiness } from "./AdminBusiness"
 import {
   useCallback,
   useEffect,
@@ -5371,6 +5372,8 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
                     {business.published ? "Published" : "Hidden"}
                   </span>
                   <div className="admin-row-actions">
+                    <Link className="action action-soft" to={`/admin/businesses/${encodeURIComponent(business.id)}/edit`}>Edit</Link>
+                    <Link className="action action-soft" to={`/admin/businesses/${encodeURIComponent(business.id)}`}>View Business</Link>
                     <Link
                       className="action action-soft"
                       to={`/admin/locations/new?businessId=${encodeURIComponent(business.id)}`}
@@ -6953,6 +6956,12 @@ function AdminRouter({ userId }: { userId: string }) {
   if (view === "businesses/new")
     return <AdminPage key={view} userId={userId} view="add-business" />
 
+  const businessRoute = view.match(/^businesses\/([^/]+)(\/edit)?$/)
+  if (businessRoute)
+    return <Page title={businessRoute[2] ? "Edit Business" : "View Business"}>
+      <AdminNavigation section="businesses-deals" />
+      <AdminBusiness key={view} id={decodeURIComponent(businessRoute[1])} editing={Boolean(businessRoute[2])} />
+    </Page>
   if (view === "deals/new")
     return <AdminPage key={view} userId={userId} view="create-deal" />
 

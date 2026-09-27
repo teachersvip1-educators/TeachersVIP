@@ -489,3 +489,8 @@ h1, h2 { font-family: Oswald, sans-serif; }
   .admin-row > .admin-row-actions { grid-column: 1; grid-row: 3; flex-wrap: wrap; }
   .admin-row > .admin-row-actions .action { grid-column: auto; grid-row: auto; }
 }
+
+.admin-business-detail { min-width: 0; overflow-wrap: anywhere; }
+.admin-business-image { display: block; width: 100%; max-width: 480px; max-height: 280px; object-fit: cover; border-radius: 16px; margin-top: 16px; }
+.admin-business-detail .admin-form { display: grid; gap: 18px; margin-top: 20px; min-width: 0; }
+.admin-business-detail > h2 { margin: 18px 0 12px; font-size: 24px; } .admin-business-detail > h3 { margin: 24px 0 10px; font-weight: 700; } .admin-business-detail > p { margin: 10px 0; line-height: 1.6; } .admin-business-detail > ul { display: grid; gap: 6px; } .admin-business-detail > .admin-row-actions { margin-top: 20px; } .admin-business-image[hidden] { display: none; }
