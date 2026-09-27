@@ -59,11 +59,13 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
 }
 
 type Submission = { id: string; deal_id: string; cta_type: OfferCtaType; member_id: string; full_name: string; email: string; business_name: string; event_name: string; submitted_at: string }
-type InterestData = { submissions: Submission[]; totals: { submissions: number; educators: number }; offers: { id: string; title: string; event_name: string; business_name: string; cta_type: OfferCtaType; interested: number }[]; page: number; pageSize: number }
+type InterestData = { submissions: Submission[]; totals: { submissions: number; educators: number }; offers: { id: string; title: string; event_name: string; business_name: string; business_id: string; cta_type: OfferCtaType; interested: number }[]; page: number; pageSize: number }
 
-export function AdminOfferInterests() {
+export function AdminOfferInterests({ invitesOnly = false }: { invitesOnly?: boolean }) {
   const [data, setData] = useState<InterestData | null>(null)
   const [dealId, setDealId] = useState('')
+  const [businessId, setBusinessId] = useState('')
+  const ctaFilter: Record<string, string> = invitesOnly ? { ctaType: 'get_launch_invite' } : {}
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -72,31 +74,35 @@ export function AdminOfferInterests() {
   useEffect(() => {
     let current = true
     setBusy(true); setError('')
-    api<InterestData>(`/admin/offer-interests?${new URLSearchParams({ dealId, page: String(page) })}`)
+    api<InterestData>(`/admin/offer-interests?${new URLSearchParams({ dealId, businessId, ...ctaFilter, page: String(page) })}`)
       .then(result => { if (current) setData(result) })
       .catch(e => { if (current) { setError(e.message); setData(null) } })
       .finally(() => { if (current) setBusy(false) })
     return () => { current = false }
-  }, [dealId, page, revision])
+  }, [dealId, businessId, invitesOnly, page, revision])
   const download = async () => {
     setExporting(true); setError('')
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/admin/offer-interests?${new URLSearchParams({ dealId, export: 'csv' })}`, { credentials: 'include' })
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/admin/offer-interests?${new URLSearchParams({ dealId, businessId, ...ctaFilter, export: 'csv' })}`, { credentials: 'include' })
       if (!response.ok) throw new Error((await response.json()).error || 'Export failed.')
       const url = URL.createObjectURL(await response.blob())
       const link = document.createElement('a')
-      link.href = url; link.download = 'interested-educators.csv'
+      link.href = url; link.download = invitesOnly ? `invite-requests${dealId ? '-' + dealId : businessId ? '-' + businessId : ''}.csv` : 'interested-educators.csv'
       document.body.appendChild(link)
       link.click(); link.remove()
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (e) { setError((e as Error).message) } finally { setExporting(false) }
   }
   return <section className="admin-card admin-table-card offer-interests" aria-busy={busy}>
-    <div className="admin-card-heading"><div><h2>Interested educators</h2><p>Waitlists, RSVPs and launch invite requests.</p></div></div>
+    <div className="admin-card-heading"><div><h2>{invitesOnly ? "Invite Requests" : "Interested educators"}</h2><p>{invitesOnly ? "Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations." : "Waitlists, RSVPs and launch invite requests."}</p></div></div>
     <div className="interest-list-tools">
-      <label className="field"><span>Business / event</span><select value={dealId} onChange={event => { setDealId(event.target.value); setPage(1) }}>
-        <option value="">All interest offers</option>
-        {data?.offers.map(offer => <option key={offer.id} value={offer.id}>{offer.business_name} · {offer.event_name || offer.title} · {offer.interested} interested</option>)}
+      {invitesOnly && <label className="field"><span>Business</span><select value={businessId} onChange={event => { setBusinessId(event.target.value); setDealId(''); setPage(1) }}>
+        <option value="">All businesses</option>
+        {[...new Map(data?.offers.map(offer => [offer.business_id, offer.business_name]) || []).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+      </select></label>}
+      <label className="field"><span>{invitesOnly ? "Event" : "Business / event"}</span><select value={dealId} onChange={event => { setDealId(event.target.value); setPage(1) }}>
+        <option value="">{invitesOnly ? "All launch events" : "All interest offers"}</option>
+        {data?.offers.filter(offer => !businessId || offer.business_id === businessId).map(offer => <option key={offer.id} value={offer.id}>{offer.business_name} · {offer.event_name || offer.title} · {offer.interested} interested</option>)}
       </select></label>
       <button className="action action-soft" disabled={busy} onClick={() => setRevision(value => value + 1)}>Refresh list</button>
       <button className="action action-gold" disabled={busy || exporting || !data?.totals.submissions} onClick={() => void download()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>

@@ -5461,6 +5461,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
           <AdminDealPreview deal={preview} image={preview.image_url} />
         </section>
       )}
+      {view === "requests-messages" && <AdminOfferInterests invitesOnly />}
       {view === "requests-messages" && (
         <>
           <section className="admin-card admin-table-card">

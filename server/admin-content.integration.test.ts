@@ -312,4 +312,21 @@ suite("admin business creation and offer interest persistence", () => {
     expect((await send("GET", `/api/admin/deals/${id}`)).json().deal.title).toBe("Updated educator offer")
   })
 
+  it("separates launch invite lists and exports by business and event", async () => {
+    const filter = `ctaType=get_launch_invite&businessId=${businessId}`
+    const result = await send("GET", `/api/admin/offer-interests?${filter}`)
+    expect(result.statusCode).toBe(200)
+    expect(result.json().totals.submissions).toBe(1)
+    expect(result.json().submissions[0].cta_type).toBe("get_launch_invite")
+    expect(result.json().offers.find((offer: { id: string }) => offer.id === `get-launch-invite-${suffix}`).business_id).toBe(businessId)
+    const wrongEvent = await send("GET", `/api/admin/offer-interests?${filter}&dealId=rsvp-${suffix}`)
+    expect(wrongEvent.json().submissions).toHaveLength(0)
+    const wrongBusiness = await send("GET", `/api/admin/offer-interests?ctaType=get_launch_invite&businessId=another-business`)
+    expect(wrongBusiness.json().submissions).toHaveLength(0)
+    const csv = await send("GET", `/api/admin/offer-interests?${filter}&export=csv`)
+    expect(csv.body).toContain("Event get_launch_invite")
+    expect(csv.body).not.toContain("Event rsvp")
+    expect((await send("GET", `/api/admin/offer-interests?${filter}`, undefined, memberToken)).statusCode).toBe(403)
+  })
+
 })
