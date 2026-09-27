@@ -2330,7 +2330,6 @@ function Discover({ user }: { user: SessionUser }) {
     <Page title="Discover Deals">
       <section className="hero">
         <div className="hero-copy">
-          <span>EXCLUSIVE EDUCATOR PERKS</span>
           <h2>
             Support local.
             <br />
