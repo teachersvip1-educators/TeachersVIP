@@ -2172,12 +2172,33 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return { ok: true }
   })
 
+  app.get("/api/admin/deals/:id", async (request, reply) => {
+    requireSuperadmin(request)
+    const { id } = parse(z.object({ id: z.string().min(1) }), request.params)
+    const result = await db.query('SELECT * FROM deals WHERE id=$1', [id])
+    const row = result.rows[0]
+    if (!row) return reply.code(404).send({ error: 'Offer not found.' })
+    const { redemption_payload_encrypted, promo_code_encrypted, ...deal } = row
+    const locations = await db.query('SELECT business_location_id FROM deal_locations WHERE deal_id=$1', [id])
+    reply.header("Cache-Control", "no-store")
+    return { deal: { ...deal, locationIds: locations.rows.map(row => row.business_location_id),
+      redemptionValue: redemption_payload_encrypted ? decrypt(redemption_payload_encrypted, config.DATA_ENCRYPTION_KEY) : '',
+      promoCode: promo_code_encrypted ? decrypt(promo_code_encrypted, config.DATA_ENCRYPTION_KEY) : '' } }
+  })
+
   app.patch("/api/admin/deals/:id", async (request) => {
     requireSuperadmin(request)
     const { id } = parse(z.object({ id: z.string().min(1) }), request.params)
     const body = parse(
       z
         .object({
+          ctaType: z.enum(['use_deal', 'join_waitlist', 'rsvp', 'get_launch_invite']).optional(),
+          eventName: z.string().trim().max(160).nullable().optional(),
+          category: z.string().trim().min(2).max(60).optional(),
+          channel: z.enum(['in_person', 'online']).optional(),
+          giveaway: z.boolean().optional(),
+          promoCode: z.string().trim().max(2000).nullable().optional(),
+          locationIds: z.array(z.string().min(1)).max(100).optional(),
           published: z.boolean().optional(),
           featured: z.boolean().optional(),
           sponsored: z.boolean().optional(),
@@ -2222,6 +2243,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       request.body,
     )
     const mappings: Record<string, string> = {
+      ctaType: "cta_type", eventName: "event_name", category: "category", channel: "channel",
+      giveaway: "giveaway", promoCode: "promo_code_encrypted",
       published: "published",
       featured: "featured",
       sponsored: "sponsored",
@@ -2240,32 +2263,52 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       usageLimitScope: "usage_limit_scope",
       trackingMode: "tracking_mode",
     }
-    const fields = Object.entries(body)
-      .filter(([, value]) => value !== undefined)
-      .map(
-        ([field, value]) =>
-          [
-            field,
-            field === "redemptionValue" && value
-              ? encrypt(String(value), config.DATA_ENCRYPTION_KEY)
-              : value,
-          ] as const,
-      )
-    const priorPublication = await db.query<{ published: boolean }>('SELECT published FROM deals WHERE id=$1', [id])
-    await db.query(
-      `UPDATE deals SET ${fields.map(([field], index) => `${mappings[field]}=$${index + 1}`).join(",")} WHERE id=$${fields.length + 1}`,
-      [...fields.map(([, value]) => value), id],
-    )
-    await db.query(
-      `INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'updated','deal',$3,$4)`,
-      [
-        randomUUID(),
-        request.currentUser!.id,
-        id,
-        JSON.stringify(Object.fromEntries(fields)),
-      ],
-    )
-    if (body.published === true && priorPublication.rows[0]?.published === false)
+    const client = await db.connect()
+    let wasPublished = false
+    try {
+      await client.query('BEGIN')
+      const existing = await client.query('SELECT * FROM deals WHERE id=$1 FOR UPDATE', [id])
+      const prior = existing.rows[0]
+      if (!prior) throw Object.assign(new Error('Offer not found.'), { statusCode: 404 })
+      wasPublished = prior.published
+      const cta = body.ctaType ?? prior.cta_type
+      const channel = body.channel ?? prior.channel
+      const period = body.usageLimitPeriod ?? prior.usage_limit_period
+      const start = body.startsAt === undefined ? prior.starts_at : body.startsAt
+      const end = body.endsAt === undefined ? prior.ends_at : body.endsAt
+      if (start && end && new Date(start) >= new Date(end))
+        throw Object.assign(new Error('End date must be after the start date.'), { statusCode: 400, field: 'endsAt' })
+      if (cta === 'use_deal' && period === 'promo' && (!start || !end))
+        throw Object.assign(new Error('Promotional limits require start and end dates.'), { statusCode: 400, field: 'startsAt' })
+      if (cta !== 'use_deal') {
+        body.usageLimitCount = null; body.usageLimitPeriod = 'none'; body.estimatedSavingsCents = 0
+      }
+      let locations = body.locationIds
+      const changesRedemption = ['ctaType', 'channel', 'locationIds', 'redemptionMethod', 'redemptionValue'].some(key => key in body)
+      if (changesRedemption && cta === 'use_deal' && channel === 'in_person') {
+        if (locations === undefined) {
+          const result = await client.query('SELECT business_location_id FROM deal_locations WHERE deal_id=$1', [id])
+          locations = result.rows.map(row => row.business_location_id)
+        }
+        const valid = await client.query('SELECT id FROM business_locations WHERE business_id=$1 AND active AND latitude IS NOT NULL AND longitude IS NOT NULL AND id=ANY($2::text[])', [prior.business_id, locations])
+        if (!locations?.length || valid.rows.length !== new Set(locations).size)
+          throw Object.assign(new Error('Select participating locations with coordinates for an in-person Use Deal offer.'), { statusCode: 400, field: 'locationIds' })
+      } else if (changesRedemption) { locations = [] }
+      const fields = Object.entries(body).filter(([field, value]) => field !== 'locationIds' && value !== undefined)
+        .map(([field, value]) => [field, ['redemptionValue', 'promoCode'].includes(field) && value ? encrypt(String(value), config.DATA_ENCRYPTION_KEY) : value] as const)
+      if (fields.length) await client.query(
+        `UPDATE deals SET ${fields.map(([field], index) => `${mappings[field]}=$${index + 1}`).join(',')} WHERE id=$${fields.length + 1}`,
+        [...fields.map(([, value]) => value), id])
+      if (locations !== undefined) {
+        await client.query('DELETE FROM deal_locations WHERE deal_id=$1', [id])
+        for (const location of new Set(locations)) await client.query('INSERT INTO deal_locations(deal_id,business_location_id) VALUES($1,$2)', [id, location])
+      }
+      await client.query("INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'updated','deal',$3,$4)",
+        [randomUUID(), request.currentUser!.id, id, JSON.stringify({ fields: Object.keys(body) })])
+      await client.query('COMMIT')
+    } catch (error) { await client.query('ROLLBACK'); throw error }
+    finally { client.release() }
+    if (body.published === true && !wasPublished)
       await sendCityDealAlerts(id).catch(error => app.log.error({ error }, 'City alert delivery failed'))
     return { ok: true }
   })

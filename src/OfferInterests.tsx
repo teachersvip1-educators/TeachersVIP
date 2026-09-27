@@ -31,7 +31,14 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   return <section className="deal-detail interest-offer-detail">
-    <div className="deal-detail-media"><img src={deal.image_url} alt={deal.business_name} /></div>
+    <div className="deal-detail-media interest-offer-media">
+      <img src={deal.image_url} alt={deal.business_name} />
+      <div className="interest-image-action">
+        {submitted ? <span className="action action-gold">Interest saved</span> : user?.verified ?
+          <button className="action action-gold" aria-describedby="interest-consent" disabled={busy} onClick={() => void submit()}>{busy ? 'Saving your interest…' : label}</button> :
+          <Link className="action action-gold" to={user ? '/verify' : '/create-account'} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : `Sign up to ${label}`}</Link>}
+      </div>
+    </div>
     <div className="detail-copy">
       <div className="tags"><span>{label}</span></div>
       <h2>{deal.event_name || deal.title}</h2>
@@ -42,11 +49,9 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
         <strong>{deal.cta_type === 'rsvp' ? 'Your RSVP is saved.' : deal.cta_type === 'get_launch_invite' ? 'Your launch invite request is saved.' : 'You’re on the waitlist.'}</strong>
         <p>Your interest has been recorded for {deal.business_name}. You only need to submit once.</p>
       </div> : user?.verified ? <>
-        <p className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
-        <button className="action action-gold" disabled={busy} onClick={() => void submit()}>{busy ? 'Saving your interest…' : label}</button>
+        <p id="interest-consent" className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
       </> : <>
         <p>Sign up and verify your email before registering interest.</p>
-        <Link className="action action-gold" to={user ? '/verify' : '/create-account'} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : `Sign up to ${label}`}</Link>
         {!user && <Link className="back-link" to="/sign-in" onClick={() => rememberOffer(deal.id)}>Already a member? Sign In</Link>}
       </>}
     </div>

@@ -1,5 +1,6 @@
+import { AdminOfferEditor } from "./AdminOfferEditor"
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { api } from "./lib/api"
 import { focusApiError, validateAdminForm } from "./lib/admin-form"
 import { CategorySelect, WeeklyHoursEditor } from "./AdminWorkspace"
@@ -15,12 +16,12 @@ type Business = {
 type Offer = { id: string; business_id: string; title: string; published: boolean }
 
 export function AdminBusiness({ id, editing }: { id: string; editing: boolean }) {
-  const navigate = useNavigate()
   const [business, setBusiness] = useState<Business | null>(null)
   const [offers, setOffers] = useState<Offer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
+  const [businessSaved, setBusinessSaved] = useState(false)
   const url = `/admin/businesses/${encodeURIComponent(id)}`
   useEffect(() => {
     let active = true
@@ -57,7 +58,7 @@ export function AdminBusiness({ id, editing }: { id: string; editing: boolean })
           openingHours: JSON.parse(text("openingHours") || "null"),
         }),
       })
-      navigate(`${url}?saved=1`)
+      setBusinessSaved(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save business. Please try again.")
       focusApiError(form, e)
@@ -68,8 +69,8 @@ export function AdminBusiness({ id, editing }: { id: string; editing: boolean })
     <Link to="/admin/businesses-deals">← Business Partners</Link>
     {loading ? <p role="status">Loading business…</p> : !business ? <p role="alert">{error}</p> : editing ? <>
       <h2>Edit {business.name}</h2>
-      <p>Update the business details and weekly hours. Participating locations are managed separately.</p>
-      <form className="admin-form" onSubmit={save} noValidate>
+      <p>Update business details and hours, then edit the deals and offer questions below. Each section saves separately.</p>
+      <form className="admin-form" onSubmit={save} onChange={() => setBusinessSaved(false)} noValidate>
         <label className="field"><span>Business name</span><input name="name" required minLength={2} maxLength={140} defaultValue={business.name} /></label>
         <CategorySelect existing={[business.category]} defaultValue={business.category} />
         <label className="field"><span>Description</span><textarea name="description" required minLength={5} maxLength={1000} defaultValue={business.description} /></label>
@@ -81,11 +82,16 @@ export function AdminBusiness({ id, editing }: { id: string; editing: boolean })
         <label className="field"><span>Timezone</span><input name="timezone" required defaultValue={business.hours_timezone || "America/Chicago"} /></label>
         <WeeklyHoursEditor initial={JSON.stringify(business.opening_hours || null)} initialTimezone={business.hours_timezone} onChange={() => {}} />
         {error && <p role="alert">{error}</p>}
+        {businessSaved && <p role="status">Business changes saved.</p>}
         <div className="admin-row-actions">
           <button className="action action-gold" type="submit" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</button>
           <Link className="action action-soft" to={url}>Cancel</Link>
         </div>
       </form>
+      <h3>Deals and offer questions</h3>
+      {offers.map(offer => <AdminOfferEditor key={offer.id} id={offer.id} businessId={id} locations={business.locations} />)}
+      {!offers.length && <p>No offers yet. Create the first offer for this business below.</p>}
+      <Link className="action action-soft" to={`/admin/deals/new?businessId=${encodeURIComponent(id)}`}>Create Another Deal</Link>
     </> : <>
       <h2>{business.name}</h2>
       {new URLSearchParams(window.location.search).get("saved") === "1" && <p role="status">Business changes saved.</p>}

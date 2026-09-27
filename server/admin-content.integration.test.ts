@@ -295,4 +295,21 @@ suite("admin business creation and offer interest persistence", () => {
       ).statusCode,
     ).toBe(409)
   })
+  it("edits an existing offer without replacing it and rejects invalid location changes", async () => {
+    const id = `use-deal-${suffix}`
+    expect((await send("GET", `/api/admin/deals/${id}`, undefined, memberToken)).statusCode).toBe(403)
+    const changed = await send("PATCH", `/api/admin/deals/${id}`, {
+      title: "Updated educator offer", eventName: "Educator evening",
+      redemptionValue: "EDITED-CODE", promoCode: "EDITED-ONLINE",
+      ctaType: "use_deal", channel: "online", locationIds: [],
+    })
+    expect(changed.statusCode).toBe(200)
+    const read = await send("GET", `/api/admin/deals/${id}`)
+    expect(read.json().deal).toMatchObject({ id, title: "Updated educator offer", event_name: "Educator evening", redemptionValue: "EDITED-CODE", promoCode: "EDITED-ONLINE" })
+    expect(read.json().deal).not.toHaveProperty("redemption_payload_encrypted")
+    const invalid = await send("PATCH", `/api/admin/deals/${id}`, { title: "Must roll back", channel: "in_person", locationIds: [] })
+    expect(invalid.statusCode).toBe(400)
+    expect((await send("GET", `/api/admin/deals/${id}`)).json().deal.title).toBe("Updated educator offer")
+  })
+
 })
