@@ -31,13 +31,9 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   return <section className="deal-detail interest-offer-detail">
-    <div className="deal-detail-media interest-offer-media">
+    <div className="deal-detail-media">
       <img src={deal.image_url} alt={deal.business_name} />
-      <div className="interest-image-action">
-        {submitted ? <span className="action action-gold">Interest saved</span> : user?.verified ?
-          <button className="action action-gold" aria-describedby="interest-consent" disabled={busy} onClick={() => void submit()}>{busy ? 'Saving your interest…' : label}</button> :
-          <Link className="action action-gold" to={user ? '/verify' : '/create-account'} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : `Sign up to ${label}`}</Link>}
-      </div>
+
     </div>
     <div className="detail-copy">
       <div className="tags"><span>{label}</span></div>
@@ -54,6 +50,11 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
         <p>Sign up and verify your email before registering interest.</p>
         {!user && <Link className="back-link" to="/sign-in" onClick={() => rememberOffer(deal.id)}>Already a member? Sign In</Link>}
       </>}
+      <div className="deal-sticky-action">
+        {submitted ? <span className="action action-gold">Interest saved</span> : user?.verified ?
+          <button className="action action-gold" aria-describedby="interest-consent" disabled={busy} onClick={() => void submit()}>{busy ? 'Saving your interest…' : label}</button> :
+          <Link className="action action-gold" to={user ? '/verify' : '/create-account'} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : `Sign up to ${label}`}</Link>}
+      </div>
     </div>
   </section>
 }
