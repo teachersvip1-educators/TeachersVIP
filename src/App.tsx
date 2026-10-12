@@ -1998,16 +1998,16 @@ function VerifiedWaitlist() {
           <span>Follow TeachersVIP on Instagram</span>
         </a>
         {rulesUrl ? (
-          <a className="waitlist-rules" href={rulesUrl} target="_blank" rel="noopener noreferrer">Giveaway rules and entry deadline</a>
+          <a className="waitlist-rules" href={rulesUrl} target="_blank" rel="noopener noreferrer">Giveaway rules</a>
         ) : (
-          <button className="waitlist-rules" onClick={() => setRulesOpen(true)}>Giveaway rules and entry deadline</button>
+          <button className="waitlist-rules" onClick={() => setRulesOpen(true)}>Giveaway rules</button>
         )}
       </main>
       {rulesOpen && (
         <div className="waitlist-dialog-backdrop" onClick={() => setRulesOpen(false)}>
           <dialog ref={rulesDialog} className="waitlist-dialog" aria-labelledby="waitlist-rules-title" onCancel={() => setRulesOpen(false)} onClose={() => setRulesOpen(false)} onClick={(event) => event.stopPropagation()}>
-            <h2 id="waitlist-rules-title">Giveaway rules and entry deadline</h2>
-            <p>Keep an eye on your email for giveaway rules and entry deadline details.</p>
+            <h2 id="waitlist-rules-title">Giveaway rules</h2>
+            <p>Valid educator verification is required to enter the $50 gift card giveaway.</p>
             <button className="action action-navy" onClick={() => setRulesOpen(false)}>Got it</button>
           </dialog>
         </div>
