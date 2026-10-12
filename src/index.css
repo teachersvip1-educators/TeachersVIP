@@ -159,6 +159,21 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .verify-panel, .partner-card, .profile-form { padding: 25px; border-radius: 22px; background: #fff; box-shadow: 0 12px 35px #06101e17; }
 .verify-panel { display: grid; gap: 22px; text-align: center; }
 .verify-panel > p, .verify-panel > small, .partner-card > p { color: #64748b; line-height: 1.6; }
+.waitlist-page { min-height: 100dvh; color: #0f172a; background: #fff; }
+.waitlist-header { min-height: 112px; display: grid; place-items: center; padding: 20px 24px; background: #10294c; border-bottom: 4px solid #d4af37; }
+.waitlist-header .brand { font-size: clamp(25px, 5vw, 42px); letter-spacing: -1.7px; }
+.waitlist-header .brand-mark { width: clamp(42px, 7vw, 58px); height: clamp(42px, 7vw, 58px); }
+.waitlist-content { width: min(760px, 100%); display: grid; justify-items: center; gap: 0; padding: clamp(42px, 7vw, 76px) 24px 64px; margin-inline: auto; text-align: center; }
+.waitlist-success-icon { display: grid; place-items: center; width: 142px; height: 142px; margin-bottom: 24px; border-radius: 50%; color: #fff; background: linear-gradient(145deg, #f5d061, #c49a25); box-shadow: 0 13px 30px #a87e1833, inset 0 2px 0 #fff8; animation: waitlist-arrive 560ms cubic-bezier(.2,.85,.3,1.2) both; }
+.waitlist-eyebrow { margin: 0 0 8px; color: #8a6d1a; font-size: 11px; font-weight: 800; letter-spacing: 1.7px; text-transform: uppercase; }
+.waitlist-content h1 { margin: 0; color: #10294c; font: 800 clamp(40px, 8vw, 64px)/1.04 Montserrat, sans-serif; letter-spacing: -2.5px; }
+.waitlist-intro { max-width: 630px; margin: 20px 0 34px; color: #26364d; font-size: clamp(17px, 2.8vw, 22px); line-height: 1.58; }
+.waitlist-giveaway { width: min(100%, 680px); display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 18px; padding: 22px 26px; border: 1px solid #ecd88d; border-radius: 20px; background: linear-gradient(120deg, #fff4ce, #ffedb3); text-align: left; }
+.waitlist-gift-icon { width: 66px; height: 66px; display: grid; place-items: center; border-radius: 17px; color: #fff; background: #10294c; box-shadow: 0 8px 17px #10294c27; }
+.waitlist-giveaway h2 { margin: 0 0 6px; color: #10294c; font: 800 19px Montserrat, sans-serif; letter-spacing: -.3px; }
+.waitlist-giveaway p { margin: 0; color: #26364d; font-size: 15px; line-height: 1.55; }
+.waitlist-email-note { max-width: 560px; margin: 28px 0 0; color: #475569; font-size: 16px; line-height: 1.6; }
+@keyframes waitlist-arrive { from { opacity: 0; transform: translateY(8px) scale(.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .dev-link { display: block; text-align: center; }
 .vip-card { min-height: 330px; display: flex; flex-direction: column; justify-content: space-between; padding: 26px; margin-bottom: 20px; border-radius: 25px; color: #fff; background: radial-gradient(circle at 80% 20%,#263d61,#06101e 62%); border: 1px solid #d4af3790; box-shadow: 0 25px 65px #06101e5c; }
 .card-deal { display: grid; gap: 16px; padding: 19px; margin-bottom: 20px; border: 1px solid #d4af3766; border-radius: 20px; background: #fffdf4; box-shadow: 0 10px 28px #06101e12; }
@@ -235,6 +250,8 @@ h1, h2 { font-family: Oswald, sans-serif; }
 @media (max-width: 460px) { .auth-page { padding: 0; }.auth-card { min-height: 100dvh; border: 0; border-radius: 0; padding: 25px 20px; }.two { grid-template-columns: 1fr; }.page { padding-inline: 16px; }.topbar { padding-inline: 16px; }.stats { grid-template-columns: repeat(2,1fr); }.stats strong { font-size: 19px; }.card-footer { align-items: flex-start; flex-direction: column; }.page-heading { align-items: flex-start; flex-direction: column; }.detail-copy { padding: 22px 24px 26px; }.image-card-action { inset: auto 12px 12px; }.admin-card { padding: 17px; border-radius: 18px; }.admin-intro { padding: 19px; }.admin-intro > svg { width: 30px; }.admin-row { grid-template-columns: 1fr auto; }.admin-row .admin-status { grid-column: 2; grid-row: 1; }.admin-row .action { grid-column: 2; grid-row: 2; }.admin-row > div { grid-column: 1; grid-row: 1 / span 2; }.admin-preview-panel .admin-card-heading { flex-wrap: wrap; }.admin-preview-panel .admin-card-heading .action { width: auto; } }
 @media (max-width: 899px) { .deal-detail { margin-bottom: 96px; }.deal-sticky-action { position: fixed; inset: auto 16px calc(72px + env(safe-area-inset-bottom) + 12px); z-index: 24; width: auto; }.deal-sticky-action .action { box-shadow: 0 14px 32px #06101e4d; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition: none !important; } }
+@media (max-width: 520px) { .waitlist-header { min-height: 88px; }.waitlist-content { padding: 44px 20px 52px; }.waitlist-success-icon { width: 116px; height: 116px; margin-bottom: 20px; }.waitlist-success-icon svg { width: 62px; height: 62px; }.waitlist-content h1 { letter-spacing: -1.8px; }.waitlist-intro { margin: 16px 0 26px; }.waitlist-giveaway { grid-template-columns: 52px 1fr; gap: 13px; padding: 17px 15px; border-radius: 16px; }.waitlist-gift-icon { width: 52px; height: 52px; border-radius: 14px; }.waitlist-giveaway h2 { font-size: 16px; }.waitlist-giveaway p, .waitlist-email-note { font-size: 14px; } }
+@media (prefers-reduced-motion: reduce) { .waitlist-success-icon { animation: none; } }
 
 /* Final agreement: stable auth footer, activation payloads, and structured partner setup. */
 .auth-card { display: flex; flex-direction: column; min-height: min(760px, calc(100dvh - 48px)); }

@@ -31,6 +31,7 @@ import {
   Compass,
   Copy,
   Heart,
+  Gift,
   IdentificationCard,
   MagnifyingGlass,
   MapPin,
@@ -1868,9 +1869,7 @@ function Verify({
         const nextUser = await refresh()
 
         if (result.status === "verified" && nextUser?.verified) {
-          setMessage("Your email address is verified.")
-
-          setTimeout(() => navigate(pendingOfferDestination()), 900)
+          navigate("/youre-on-the-list", { replace: true })
         } else
           setMessage(
             "Your email is confirmed. Your educator eligibility is now in manual review; we’ll notify you when a decision is made.",
@@ -1952,6 +1951,42 @@ function Verify({
   )
 }
 
+function VerifiedWaitlist() {
+  return (
+    <div className="waitlist-page">
+      <header className="waitlist-header">
+        <Logo light to="/youre-on-the-list" />
+      </header>
+      <main className="waitlist-content">
+        <div className="waitlist-success-icon" aria-hidden="true">
+          <CheckCircle size={74} weight="fill" />
+        </div>
+        <p className="waitlist-eyebrow">Verified educator</p>
+        <h1>You’re on the list!</h1>
+        <p className="waitlist-intro">
+          Your educator account is verified. You’ll be among the first to hear
+          when local business partner offers launch.
+        </p>
+        <section className="waitlist-giveaway" aria-labelledby="giveaway-heading">
+          <div className="waitlist-gift-icon" aria-hidden="true">
+            <Gift size={35} weight="duotone" />
+          </div>
+          <div>
+            <h2 id="giveaway-heading">A little thank-you</h2>
+            <p>
+              A $50 gift card giveaway is coming soon. We’ll email you with
+              entry details.
+            </p>
+          </div>
+        </section>
+        <p className="waitlist-email-note">
+          Keep an eye on your inbox for partner announcements as offers launch.
+        </p>
+      </main>
+    </div>
+  )
+}
+
 function PublicVerify() {
   const [params] = useSearchParams(),
     [error, setError] = useState("")
@@ -1971,7 +2006,7 @@ function PublicVerify() {
 
       .then((result) =>
         window.location.replace(
-          result.status === "verified" ? pendingOfferDestination() : "/verify",
+          result.status === "verified" ? "/youre-on-the-list" : "/verify",
         ),
       )
 
@@ -1994,7 +2029,7 @@ function PublicVerify() {
         <div className="verification-progress">
           <span className="skeleton line" />
           <span className="skeleton line" />
-          <small>You’ll be taken to Discover Deals automatically.</small>
+          <small>You’ll be taken to your confirmation automatically.</small>
         </div>
       )}
     </AuthFrame>
@@ -7016,6 +7051,7 @@ function AppRoutes() {
 
   if (
     user &&
+    !user.is_superadmin &&
     !user.verified &&
     !routeLocation.pathname.startsWith("/deals/") &&
     ![
@@ -7030,6 +7066,17 @@ function AppRoutes() {
     ].includes(routeLocation.pathname)
   )
     return <Navigate to="/verify" replace />
+
+  if (routeLocation.pathname === "/youre-on-the-list") {
+    if (user?.is_superadmin) return <Navigate to="/admin" replace />
+    return user?.verified ? (
+      <VerifiedWaitlist />
+    ) : (
+      <Navigate to="/sign-in" replace />
+    )
+  }
+
+  if (user?.verified && !user.is_superadmin) return <VerifiedWaitlist />
 
   return user ? (
     <Shell user={user} onSignOut={signOut}>
@@ -7102,6 +7149,10 @@ function AppRoutes() {
       <Route path="/privacy" element={<InformationPage kind="privacy" />} />
       <Route path="/terms" element={<InformationPage kind="terms" />} />
       <Route path="/verify" element={<PublicVerify />} />
+      <Route
+        path="/youre-on-the-list"
+        element={<Navigate to="/sign-in" replace />}
+      />
       <Route path="/create-account" element={<Register refresh={refresh} />} />
       <Route
         path="/admin-register"
