@@ -31,7 +31,9 @@ import {
   Compass,
   Copy,
   Heart,
-  Gift,
+  Check,
+  Crown,
+  InstagramLogo,
   IdentificationCard,
   MagnifyingGlass,
   MapPin,
@@ -1952,37 +1954,64 @@ function Verify({
 }
 
 function VerifiedWaitlist() {
+  const [rulesOpen, setRulesOpen] = useState(false)
+  const rulesDialog = useRef<HTMLDialogElement>(null)
+  const instagramUrl = import.meta.env.VITE_INSTAGRAM_URL || "https://www.instagram.com/teacherss_vip/"
+  const rulesUrl = import.meta.env.VITE_GIVEAWAY_RULES_URL
+
+  useEffect(() => {
+    if (rulesOpen) rulesDialog.current?.showModal()
+  }, [rulesOpen])
+
   return (
     <div className="waitlist-page">
       <header className="waitlist-header">
-        <Logo light to="/youre-on-the-list" />
+        <Link className="waitlist-wordmark" to="/youre-on-the-list" aria-label="TeachersVIP">
+          <span>Teachers</span><span className="waitlist-vip"><Crown weight="fill" aria-hidden="true" />VIP</span>
+        </Link>
       </header>
       <main className="waitlist-content">
-        <div className="waitlist-success-icon" aria-hidden="true">
-          <CheckCircle size={74} weight="fill" />
+        <div className="waitlist-celebration" aria-hidden="true">
+          <span className="waitlist-ray ray-one" /><span className="waitlist-ray ray-two" />
+          <span className="waitlist-ray ray-three" /><span className="waitlist-ray ray-four" />
+          <span className="waitlist-ray ray-five" /><span className="waitlist-ray ray-six" />
+          <span className="waitlist-spark spark-one" /><span className="waitlist-spark spark-two" />
+          <div className="waitlist-success-icon"><Check weight="bold" /></div>
         </div>
-        <p className="waitlist-eyebrow">Verified educator</p>
         <h1>You’re on the list!</h1>
         <p className="waitlist-intro">
-          Your educator account is verified. You’ll be among the first to hear
-          when local business partner offers launch.
+          Your educator account is verified.<br />
+          You’ll be among the first to hear when local business partners go live.
         </p>
         <section className="waitlist-giveaway" aria-labelledby="giveaway-heading">
-          <div className="waitlist-gift-icon" aria-hidden="true">
-            <Gift size={35} weight="duotone" />
+          <div className="waitlist-gift-art" aria-hidden="true">
+            <span className="waitlist-gift-card"><span className="gift-ribbon-horizontal" /><span className="gift-ribbon-vertical" /><span className="gift-bow" /></span>
+            <span className="gift-glint glint-one" /><span className="gift-glint glint-two" /><span className="gift-glint glint-three" />
           </div>
-          <div>
-            <h2 id="giveaway-heading">A little thank-you</h2>
-            <p>
-              A $50 gift card giveaway is coming soon. We’ll email you with
-              entry details.
-            </p>
-          </div>
+          <h2 id="giveaway-heading">You’re also entered<br className="waitlist-giveaway-break" /> to win a $50 gift card.</h2>
         </section>
         <p className="waitlist-email-note">
-          Keep an eye on your inbox for partner announcements as offers launch.
+          Keep an eye on your email for partner announcements and giveaway details.
         </p>
+        <a className="waitlist-instagram" href={instagramUrl} target="_blank" rel="noopener noreferrer">
+          <InstagramLogo weight="regular" aria-hidden="true" />
+          <span>Follow TeachersVIP on Instagram</span>
+        </a>
+        {rulesUrl ? (
+          <a className="waitlist-rules" href={rulesUrl} target="_blank" rel="noopener noreferrer">Giveaway rules and entry deadline</a>
+        ) : (
+          <button className="waitlist-rules" onClick={() => setRulesOpen(true)}>Giveaway rules and entry deadline</button>
+        )}
       </main>
+      {rulesOpen && (
+        <div className="waitlist-dialog-backdrop" onClick={() => setRulesOpen(false)}>
+          <dialog ref={rulesDialog} className="waitlist-dialog" aria-labelledby="waitlist-rules-title" onCancel={() => setRulesOpen(false)} onClose={() => setRulesOpen(false)} onClick={(event) => event.stopPropagation()}>
+            <h2 id="waitlist-rules-title">Giveaway rules and entry deadline</h2>
+            <p>Keep an eye on your email for giveaway rules and entry deadline details.</p>
+            <button className="action action-navy" onClick={() => setRulesOpen(false)}>Got it</button>
+          </dialog>
+        </div>
+      )}
     </div>
   )
 }
