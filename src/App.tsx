@@ -45,7 +45,8 @@ import {
   UserCircle,
 } from "@phosphor-icons/react"
 
-import { api, del, patch, post } from "./lib/api"
+import { api, ApiError, del, patch, post } from "./lib/api"
+import { acquireDealLocation, DealLocationError, LOCATION_PERMISSION_HELP, locationDenialMessage } from "./lib/deal-location"
 
 import {
   AboutPage,
@@ -2824,10 +2825,30 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("")
 
+  const locationRequest = useRef<AbortController | null>(null)
+  const [locationProgress, setLocationProgress] = useState("")
+  const [locationHelp, setLocationHelp] = useState(false)
+  const [locating, setLocating] = useState(false)
+
+  useEffect(() => {
+    setDeal(null)
+    setActivation(null)
+    setError("")
+    setBusy(false)
+    setLocating(false)
+    setLocationProgress("")
+    setLocationHelp(false)
+    return () => {
+      locationRequest.current?.abort()
+      locationRequest.current = null
+    }
+  }, [id])
+
   const isOpen = useOpeningStatus(deal)
 
   useEffect(() => {
-    api<{ deal: Deal }>(`/deals/${id}`)
+    const controller = new AbortController()
+    api<{ deal: Deal }>(`/deals/${id}`, { signal: controller.signal })
 
       .then((result) => {
         setDeal(result.deal)
@@ -2841,7 +2862,8 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
         }).catch(() => {})
       })
 
-      .catch((e) => setError(e.message))
+      .catch((e) => { if (!controller.signal.aborted) setError(e.message) })
+    return () => controller.abort()
   }, [id])
 
   useEffect(() => {
@@ -2936,116 +2958,66 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
   }
 
   const activate = async () => {
+    if (locationRequest.current) return
     if (!user?.verified) {
       setError("Verify your email address before activating this offer.")
-
       return
     }
-
+    const controller = new AbortController()
+    locationRequest.current = controller
     setBusy(true)
-
     setError("")
-
-    const finish = async (
-      coords?: GeolocationCoordinates,
-
-      observedAt?: number,
-    ) => {
-      try {
-        const result = await post<Activation>(`/deals/${deal.id}/activate`, {
-          locationId:
-            deal.channel === "online" ? undefined : selectedLocation.id,
-
-          lat: coords?.latitude,
-
-          lng: coords?.longitude,
-
-          accuracy: coords?.accuracy,
-
-          locationTimestamp: coords
-            ? new Date(observedAt ?? Date.now()).toISOString()
-            : undefined,
-
-          idempotencyKey: crypto.randomUUID(),
-        })
-
-        setActivation(result)
-      } catch (e) {
-        setError((e as Error).message)
-      } finally {
-        setBusy(false)
-      }
-    }
-
-    if (deal.channel === "online") {
-      await finish()
-
-      return
-    }
-
-    if (
-      selectedLocation.latitude == null ||
-      selectedLocation.longitude == null
-    ) {
-      setBusy(false)
-
-      setError(
-        "This location is still being verified by TeachersVIP. Choose another participating location or try again later.",
-      )
-
-      return
-    }
-
-    if (!navigator.geolocation) {
-      setBusy(false)
-
-      setError(
-        "Location services are unavailable on this device. You can still use Get Directions, but this offer cannot unlock without an on-site location check.",
-      )
-
-      return
-    }
-
-    // A permission preflight lets us give a useful recovery path instead of
-
-    // silently failing after the browser prompt has already been dismissed.
+    setLocationHelp(false)
 
     try {
-      const permission = await navigator.permissions?.query({
-        name: "geolocation" as PermissionName,
-      })
-
-      if (permission?.state === "denied") {
-        setBusy(false)
-
-        setError(
-          "Location access is blocked. Enable location for TeachersVIP in your browser settings, then tap Use Deal again.",
-        )
-
-        return
+      let position: GeolocationPosition | undefined
+      if (deal.channel !== "online") {
+        if (selectedLocation.id === "default" || selectedLocation.latitude == null || selectedLocation.longitude == null || !selectedLocation.radiusMeters) {
+          throw new Error("This location is still being verified by TeachersVIP. Choose another participating location or try again later.")
+        }
+        setLocating(true)
+        setLocationProgress("Finding your precise location… Keep this page open. This can take up to 30 seconds.")
+        position = await acquireDealLocation({
+          target: { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude },
+          radiusM: selectedLocation.radiusMeters,
+          signal: controller.signal,
+          onProgress: (reading) => setLocationProgress(
+            reading.decision === "inside"
+              ? "Location found. Verifying your offer…"
+              : "Improving location accuracy (±" + Math.ceil(reading.accuracyM ?? 0) + " m)… Keep this page open near the business entrance.",
+          ),
+        })
       }
-    } catch {
-      // Older Safari versions do not expose the permissions API; getCurrentPosition remains authoritative.
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => void finish(position.coords, position.timestamp),
-
-      (positionError) => {
+      if (controller.signal.aborted) return
+      setLocating(false)
+      setLocationProgress("Verifying your offer…")
+      const result = await api<Activation>("/deals/" + deal.id + "/activate", {
+        method: "POST",
+        signal: controller.signal,
+        body: JSON.stringify({
+          locationId: deal.channel === "online" ? undefined : selectedLocation.id,
+          lat: position?.coords.latitude,
+          lng: position?.coords.longitude,
+          accuracy: position?.coords.accuracy,
+          locationTimestamp: position ? new Date(position.timestamp).toISOString() : undefined,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      })
+      if (!controller.signal.aborted) setActivation(result)
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        const message = e instanceof Error ? e.message : "Your offer could not be verified. Please try again."
+        setError(locationDenialMessage(message, e instanceof ApiError ? e.details : undefined))
+        setLocationHelp(e instanceof DealLocationError || (e instanceof ApiError && ["low_accuracy", "location_permission_required"].includes(String(e.details?.reason))))
+      }
+    } finally {
+      if (locationRequest.current === controller) {
+        locationRequest.current = null
         setBusy(false)
-
-        const message =
-          positionError.code === GeolocationPositionError.PERMISSION_DENIED
-            ? "Location access is required to unlock this on-site offer. Allow it for TeachersVIP and try again."
-            : positionError.code === GeolocationPositionError.TIMEOUT
-              ? "We could not get a fresh location in time. Move closer to the business, check that Location Services are on, and try again."
-              : "Your location could not be confirmed. Check Location Services and try again from the participating business."
-
-        setError(message)
-      },
-
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 },
-    )
+        setLocating(false)
+        setLocationProgress("")
+      }
+    }
   }
 
   const redemptionValue =
@@ -3110,7 +3082,12 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
               <span>Choose participating location</span>
               <select
                 value={locationId}
-                onChange={(event) => setLocationId(event.target.value)}
+                disabled={busy || !!activation}
+                onChange={(event) => {
+                  setLocationId(event.target.value)
+                  setError("")
+                  setLocationHelp(false)
+                }}
               >
                 {locations.map((location) => (
                   <option value={location.id} key={location.id}>
@@ -3164,6 +3141,18 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
             )}
           </div>
           {!activation && error && <Notice kind="error">{error}</Notice>}
+          {!activation && locationHelp && (
+            <details className="location-requirement" open>
+              <summary>Location settings help</summary>
+              <p>{LOCATION_PERMISSION_HELP}</p>
+            </details>
+          )}
+          {!activation && locationProgress && (
+            <div className="notice" role="status" aria-live="polite">
+              <p>{locationProgress}</p>
+              {locating && <button className="action action-soft" type="button" onClick={() => locationRequest.current?.abort()}>Cancel location check</button>}
+            </div>
+          )}
           {activation ? (
             <section
               className={`report-success activation-success${
