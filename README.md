@@ -5,10 +5,12 @@ TeachersVIP is a responsive educator-benefits application. The initial release v
 ## Official product rules
 
 - Eligible roles are limited to K-12 educators and college professors.
-- During the pilot, every applicant may use any valid email address and confirms ownership through a time-limited link.
-- When educator-only verification is activated, automatic approval is intentionally narrow: the domain must be reviewed as staff/faculty-only, have documented evidence, and allow the applicant's selected role.
-- When `EDUCATOR_ONLY_VERIFICATION=true` is activated, personal email providers, shared staff/student university domains, unknown domains, blocked domains, and role mismatches go to manual review. They are not automatically denied.
-- A member card and Pass2U issuance are created only after email verification in the pilot, or educator approval when educator-only verification is activated. Failed Pass2U issuance is retained and can be retried without creating duplicate passes.
+- Registration is open. Applicants confirm email ownership through a time-limited link, and educator eligibility must also be approved before membership, RSVPs, or offer access.
+- Automatic approval is intentionally narrow: the domain must be reviewed as staff/faculty-only, have documented evidence, and allow the applicant's selected role.
+- Personal email providers, shared staff/student university domains, unknown domains, blocked domains, and role mismatches go to manual review. Confirming email ownership never bypasses this review.
+- The former `EDUCATOR_ONLY_VERIFICATION` pilot switch has been removed. An old environment value of `false` cannot disable eligibility checks.
+- A member card and Pass2U issuance are created only after educator approval. Failed Pass2U issuance is retained and can be retried without creating duplicate passes.
+- Verified members can open offers and submit RSVPs. The post-verification confirmation page includes a link back to their selected offer or the offer catalogue.
 
 The educator-domain registry is built from downloaded releases from:
 

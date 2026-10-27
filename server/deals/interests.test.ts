@@ -61,8 +61,34 @@ describe('offer interest authorization and repeat submissions', () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers['content-type']).toContain('text/csv')
     expect(response.body).toContain('"VIP-123","\'=SUM(1,2)","teacher@example.test","Example","Preview","RSVP","2026-09-27T00:00:00.000Z"')
-    expect(query.mock.calls[0][1]).toEqual(['event'])
+    expect(query.mock.calls[0][1]).toEqual(['event', null, null])
     expect(query.mock.calls[0][0]).not.toContain('LIMIT')
+  })
+  it.each([
+    ['dealId=event-a', ['event-a', null, null]],
+    ['dealId=event-b', ['event-b', null, null]],
+    ['dealId=empty-event&businessId=business-b&ctaType=get_launch_invite', ['empty-event', 'business-b', 'get_launch_invite']],
+    ['businessId=business-b&ctaType=get_launch_invite', [null, 'business-b', 'get_launch_invite']],
+  ])('uses identical filters for rows, totals and CSV: %s', async (filters, values) => {
+    const { app, query } = setup('admin')
+    query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ submissions: 0, educators: 0 }] }).mockResolvedValueOnce({ rows: [] })
+    const response = await app.inject({ method: 'GET', url: `/api/admin/offer-interests?${filters}&page=2` })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.json()).toMatchObject({ submissions: [], totals: { submissions: 0, educators: 0 }, page: 2 })
+    expect(query.mock.calls[0][1]).toEqual([...values, 100])
+    expect(query.mock.calls[1][1]).toEqual(values)
+    for (const sql of [query.mock.calls[0][0], query.mock.calls[1][0]]) {
+      expect(sql).toContain('deal_id=$1')
+      expect(sql).toContain('business_id=$2')
+      expect(sql).toContain('cta_type=$3')
+    }
+    query.mockResolvedValueOnce({ rows: [] })
+    const csv = await app.inject({ method: 'GET', url: `/api/admin/offer-interests?${filters}&export=csv` })
+    expect(csv.statusCode).toBe(200)
+    expect(query.mock.calls[3][1]).toEqual(values)
+    expect(query.mock.calls[3][0]).not.toContain('LIMIT')
+    expect(csv.body.trim().split('\r\n')).toHaveLength(1)
   })
 })
 

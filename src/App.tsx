@@ -410,7 +410,7 @@ function PublicHome() {
         <div>
           <ShieldCheck size={30} weight="duotone" />
           <strong>Verify once</strong>
-          <span>Confirm the email address you want to use.</span>
+          <span>Verify your school email and educator eligibility.</span>
         </div>
         <div>
           <Tag size={30} weight="duotone" />
@@ -1526,7 +1526,17 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           <Field label="First name" name="firstName" required minLength={2} />
           <Field label="Last name" name="lastName" required minLength={2} />
         </div>
-        <Field label="Email address" name="workEmail" type="email" required />
+        <Field
+          label="School / educator email address"
+          name="workEmail"
+          type="email"
+          required
+        />
+        <p className="notice">
+          Membership is for K-12 educators and college professors. Confirming your
+          email is the first step; educator eligibility must also be approved
+          before you can RSVP or access offers.
+        </p>
         <label className="field">
           <span>Your role</span>
           <select name="role" required defaultValue="">
@@ -1913,8 +1923,8 @@ function Verify({
             <>
               Your email ownership is confirmed for{" "}
               <strong>{user.work_email || user.personal_email}</strong>. Your
-              educator eligibility is in manual review; shared university,
-              personal, and unknown domains are never automatically denied.
+              educator eligibility is in manual review. You can RSVP and access
+              educator offers once your eligibility is approved.
             </>
           ) : user.verification_status === "rejected" ? (
             <>
@@ -1927,9 +1937,9 @@ function Verify({
             <>
               We sent a verification link to{" "}
               <strong>{user.work_email || user.personal_email}</strong>. Open it
-              to confirm ownership. Educator-only domain checks can be activated
-              later; shared, personal, and unknown domains then go to manual
-              review.
+              to confirm ownership. We also check your educator eligibility;
+              confirming an email alone does not unlock membership. Shared,
+              personal, and unknown domains require manual review.
             </>
           )}
         </p>
@@ -1994,6 +2004,9 @@ function VerifiedWaitlist() {
         <p className="waitlist-email-note">
           Keep an eye on your email for partner announcements and giveaway details.
         </p>
+        <Link className="action action-gold" to={pendingOfferDestination()}>
+          Explore offers and RSVP
+        </Link>
         <a className="waitlist-instagram" href={instagramUrl} target="_blank" rel="noopener noreferrer">
           <InstagramLogo weight="regular" aria-hidden="true" />
           <span>Follow TeachersVIP on Instagram</span>
@@ -7093,8 +7106,6 @@ function AppRoutes() {
       <Navigate to="/sign-in" replace />
     )
   }
-
-  if (user?.verified && !user.is_superadmin) return <VerifiedWaitlist />
 
   return user ? (
     <Shell user={user} onSignOut={signOut}>

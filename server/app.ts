@@ -23,7 +23,6 @@ import { createPass2UClient } from "./integrations/pass2u.js"
 import { createCitySearch, resolveMapboxSuggestion } from "./city-search.js"
 import {
   decideVerification,
-  decideVerificationForTestMode,
   domainLookupCandidates,
   normalizeEmail,
   type DomainEvidence,
@@ -2352,9 +2351,11 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         client,
         record.work_email,
       )
-      const decision = config.EDUCATOR_ONLY_VERIFICATION
-        ? decideVerification(record.work_email, record.selected_role, evidence)
-        : decideVerificationForTestMode(record.work_email)
+      const decision = decideVerification(
+        record.work_email,
+        record.selected_role,
+        evidence,
+      )
       verificationStatus = decision.status
       verifiedCaseId = record.id
       await client.query(
@@ -2382,7 +2383,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           JSON.stringify({
             automatic: decision.automatic,
             domain: decision.normalizedDomain,
-            educatorOnlyVerification: config.EDUCATOR_ONLY_VERIFICATION,
+            educatorOnlyVerification: true,
           }),
         ],
       )

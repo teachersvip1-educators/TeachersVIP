@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideVerification, decideVerificationForTestMode, VERIFICATION_REASON_CODES } from './decision.js'
+import { decideVerification, VERIFICATION_REASON_CODES } from './decision.js'
 import { isPersonalEmailDomain, normalizeDomain, normalizeEmail } from './domain.js'
 
 const reviewedK12 = {
@@ -52,8 +52,8 @@ describe('educator verification decisions', () => {
     expect(result).toMatchObject({ status: 'manual_review', reasonCodes: [VERIFICATION_REASON_CODES.DOMAIN_NOT_REVIEWED] })
   })
 
-  it('allows any valid email in controlled test mode while retaining email ownership', () => {
-    const result = decideVerificationForTestMode('tester@gmail.com')
-    expect(result).toMatchObject({ status: 'verified', automatic: false, reasonCodes: [VERIFICATION_REASON_CODES.TEST_MODE] })
+  it.each(['gmail.com', 'outlook.com', 'yahoo.com'])('keeps %s in review even with staff-only evidence', domain => {
+    const result = decideVerification(`tester@${domain}`, 'K-12 educator', { ...reviewedK12, normalizedDomain: domain })
+    expect(result).toMatchObject({ status: 'manual_review', automatic: false, reasonCodes: [VERIFICATION_REASON_CODES.PERSONAL_EMAIL_PROVIDER] })
   })
 })

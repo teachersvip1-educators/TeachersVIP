@@ -47,7 +47,7 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       </div> : user?.verified ? <>
         <p id="interest-consent" className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
       </> : <>
-        <p>Sign up and verify your email before registering interest.</p>
+        <p>Sign up and verify your educator eligibility before registering interest.</p>
         {!user && <Link className="back-link" to="/sign-in" onClick={() => rememberOffer(deal.id)}>Already a member? Sign In</Link>}
       </>}
       <div className="deal-sticky-action">
@@ -63,7 +63,8 @@ type Submission = { id: string; deal_id: string; cta_type: OfferCtaType; member_
 type InterestData = { submissions: Submission[]; totals: { submissions: number; educators: number }; offers: { id: string; title: string; event_name: string; business_name: string; business_id: string; cta_type: OfferCtaType; interested: number }[]; page: number; pageSize: number }
 
 export function AdminOfferInterests({ invitesOnly = false }: { invitesOnly?: boolean }) {
-  const [data, setData] = useState<InterestData | null>(null)
+  const [result, setResult] = useState<{ key: string; data: InterestData } | null>(null)
+  const [offers, setOffers] = useState<InterestData['offers']>([])
   const [dealId, setDealId] = useState('')
   const [businessId, setBusinessId] = useState('')
   const ctaFilter: Record<string, string> = invitesOnly ? { ctaType: 'get_launch_invite' } : {}
@@ -72,19 +73,27 @@ export function AdminOfferInterests({ invitesOnly = false }: { invitesOnly?: boo
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
+  const queryKey = new URLSearchParams({ dealId, businessId, ...ctaFilter, page: String(page) }).toString()
+  // A response belongs only to the selection that requested it, including
+  // the render before the effect for a new selection starts.
+  const data = result?.key === queryKey ? result.data : null
+  const loading = busy || (!data && !error)
   useEffect(() => {
     let current = true
+    const controller = new AbortController()
     setBusy(true); setError('')
-    api<InterestData>(`/admin/offer-interests?${new URLSearchParams({ dealId, businessId, ...ctaFilter, page: String(page) })}`)
-      .then(result => { if (current) setData(result) })
-      .catch(e => { if (current) { setError(e.message); setData(null) } })
+    api<InterestData>(`/admin/offer-interests?${queryKey}`, { signal: controller.signal, cache: 'no-store' })
+      .then(data => { if (current) { setResult({ key: queryKey, data }); setOffers(data.offers) } })
+      .catch(e => { if (current) { setError(e.message); setResult(null) } })
       .finally(() => { if (current) setBusy(false) })
-    return () => { current = false }
-  }, [dealId, businessId, invitesOnly, page, revision])
+    return () => { current = false; controller.abort() }
+  }, [queryKey, revision])
   const download = async () => {
     setExporting(true); setError('')
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/admin/offer-interests?${new URLSearchParams({ dealId, businessId, ...ctaFilter, export: 'csv' })}`, { credentials: 'include' })
+      const filters = new URLSearchParams(queryKey)
+      filters.delete('page'); filters.set('export', 'csv')
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/admin/offer-interests?${filters}`, { credentials: 'include', cache: 'no-store' })
       if (!response.ok) throw new Error((await response.json()).error || 'Export failed.')
       const url = URL.createObjectURL(await response.blob())
       const link = document.createElement('a')
@@ -94,22 +103,22 @@ export function AdminOfferInterests({ invitesOnly = false }: { invitesOnly?: boo
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (e) { setError((e as Error).message) } finally { setExporting(false) }
   }
-  return <section className="admin-card admin-table-card offer-interests" aria-busy={busy}>
+  return <section className="admin-card admin-table-card offer-interests" aria-busy={loading}>
     <div className="admin-card-heading"><div><h2>{invitesOnly ? "Invite Requests" : "Interested educators"}</h2><p>{invitesOnly ? "Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations." : "Waitlists, RSVPs and launch invite requests."}</p></div></div>
     <div className="interest-list-tools">
       {invitesOnly && <label className="field"><span>Business</span><select value={businessId} onChange={event => { setBusinessId(event.target.value); setDealId(''); setPage(1) }}>
         <option value="">All businesses</option>
-        {[...new Map(data?.offers.map(offer => [offer.business_id, offer.business_name]) || []).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        {[...new Map(offers.map(offer => [offer.business_id, offer.business_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select></label>}
       <label className="field"><span>{invitesOnly ? "Event" : "Business / event"}</span><select value={dealId} onChange={event => { setDealId(event.target.value); setPage(1) }}>
         <option value="">{invitesOnly ? "All launch events" : "All interest offers"}</option>
-        {data?.offers.filter(offer => !businessId || offer.business_id === businessId).map(offer => <option key={offer.id} value={offer.id}>{offer.business_name} · {offer.event_name || offer.title} · {offer.interested} interested</option>)}
+        {offers.filter(offer => !businessId || offer.business_id === businessId).map(offer => <option key={offer.id} value={offer.id}>{offer.business_name} · {offer.event_name || offer.title} · {offer.interested} interested</option>)}
       </select></label>
-      <button className="action action-soft" disabled={busy} onClick={() => setRevision(value => value + 1)}>Refresh list</button>
-      <button className="action action-gold" disabled={busy || exporting || !data?.totals.submissions} onClick={() => void download()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
+      <button className="action action-soft" disabled={loading} onClick={() => setRevision(value => value + 1)}>Refresh list</button>
+      <button className="action action-gold" disabled={loading || exporting || !data?.totals.submissions} onClick={() => void download()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
     </div>
     {error && <div className="notice notice-error" role="alert">{error}</div>}
-    {busy ? <p role="status">Loading interested educators…</p> : data && <>
+    {loading ? <p role="status">Loading interested educators…</p> : data && <>
       <div className="interest-totals"><strong>{data.totals.educators} total interested educators</strong><span>{data.totals.submissions} event submissions</span></div>
       {data.submissions.length ? <div className="interest-table-scroll" tabIndex={0} role="region" aria-label="Interested educators list"><table className="interest-table">
         <thead><tr>{['Member ID', 'Name', 'Email', 'Business', 'Event', 'CTA type', 'Submission date'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
