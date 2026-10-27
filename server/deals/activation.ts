@@ -298,17 +298,27 @@ export async function activateDeal(
   )
   if (existing) {
     const dealResult = await options.db.query<DealRow>(
-      "SELECT id,business_id,channel,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,starts_at,ends_at FROM deals WHERE id=$1",
-      [options.dealId],
+      `SELECT d.id,d.business_id,d.channel,d.redemption_method,d.redemption_payload_encrypted,d.display_ttl_seconds,d.usage_limit_count,d.usage_limit_period,d.usage_limit_scope,d.tracking_mode,d.starts_at,d.ends_at
+       FROM deals d JOIN businesses b ON b.id=d.business_id
+       WHERE d.id=$1 AND d.cta_type='use_deal' AND d.published AND b.published
+       AND (d.starts_at IS NULL OR d.starts_at<=$2) AND (d.ends_at IS NULL OR d.ends_at>$2)
+       AND (d.channel='online' OR EXISTS (
+         SELECT 1 FROM deal_locations dl JOIN business_locations bl ON bl.id=dl.business_location_id
+         WHERE dl.deal_id=d.id AND bl.id=$3 AND bl.business_id=d.business_id AND bl.active
+       ))`,
+      [options.dealId, now, existing.business_location_id],
     )
     if (dealResult.rows[0])
       return storedResult(existing, options, dealResult.rows[0], now)
+    return denied(existing.id, 'deal_unavailable')
   }
 
   const dealResult = await options.db.query<DealRow>(
     `SELECT id,business_id,channel,redemption_method,redemption_payload_encrypted,display_ttl_seconds,
     usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,starts_at,ends_at
-    FROM deals WHERE id=$1 AND cta_type='use_deal' AND published AND (starts_at IS NULL OR starts_at <= $2) AND (ends_at IS NULL OR ends_at > $2)`,
+    FROM deals WHERE id=$1 AND cta_type='use_deal' AND published
+    AND EXISTS (SELECT 1 FROM businesses b WHERE b.id=deals.business_id AND b.published)
+    AND (starts_at IS NULL OR starts_at <= $2) AND (ends_at IS NULL OR ends_at > $2)`,
     [options.dealId, now],
   )
   const deal = dealResult.rows[0]

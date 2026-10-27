@@ -1,5 +1,6 @@
-import { getConfig } from '../config.js'
+import { getConfig, type Config } from '../config.js'
 import { createPool } from './pool.js'
+import type { DbPool } from './pool.js'
 import { encrypt } from '../security.js'
 
 
@@ -33,13 +34,11 @@ const geolocationTestLocationNames: Record<string, string> = {
   'cafe-101': 'Geolocation test site · North Sam Houston',
 }
 
-export async function seed() {
-  const config = getConfig()
-  const pool = createPool(config)
+export async function seed(config: Config = getConfig(), pool: DbPool = createPool(config)) {
   try {
     for (const row of businesses) {
-      await pool.query(`INSERT INTO businesses(id,name,category,description,image_url,website_url,distance,hours,is_open,address,latitude,longitude)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, image_url=EXCLUDED.image_url, distance=EXCLUDED.distance, address=EXCLUDED.address, latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude`, row)
+      await pool.query(`INSERT INTO businesses(id,name,category,description,image_url,website_url,distance,hours,is_open,address,latitude,longitude,published)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, image_url=EXCLUDED.image_url, distance=EXCLUDED.distance, address=EXCLUDED.address, latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude,published=false`, row)
       if (row[9] && row[10] != null && row[11] != null) await pool.query(`INSERT INTO business_locations(id,business_id,location_name,address,city,timezone,latitude,longitude,geofence_radius_m,active)
         VALUES($1,$2,$3,$4,$5,'America/Chicago',$6,$7,150,true)
         ON CONFLICT (id) DO UPDATE SET location_name=EXCLUDED.location_name,address=EXCLUDED.address,city=COALESCE(business_locations.city,EXCLUDED.city),latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,active=true,updated_at=now()`, [`${row[0]}:primary`, row[0], geolocationTestLocationNames[String(row[0])] ?? 'Primary location', row[9], String(row[6]).split(',')[0]!.trim(), row[10], row[11]])
@@ -54,9 +53,9 @@ export async function seed() {
       const usageLimitCount = row[12] as number | null
       const usageLimitPeriod = String(row[13])
       const values = [...row.slice(0, 7), encryptedPromo, ...row.slice(8, 12), redemptionMethod, encrypt(redemptionText, config.DATA_ENCRYPTION_KEY), 300, usageLimitCount, usageLimitPeriod, 'offer', channel === 'online' ? 'online' : 'standard_geolocation']
-      await pool.query(`INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-        ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,category=EXCLUDED.category,restrictions=EXCLUDED.restrictions,giveaway=EXCLUDED.giveaway,promo_code_encrypted=EXCLUDED.promo_code_encrypted,redemption_method=EXCLUDED.redemption_method,redemption_payload_encrypted=EXCLUDED.redemption_payload_encrypted,display_ttl_seconds=EXCLUDED.display_ttl_seconds,usage_limit_count=EXCLUDED.usage_limit_count,usage_limit_period=EXCLUDED.usage_limit_period,usage_limit_scope=EXCLUDED.usage_limit_scope,tracking_mode=EXCLUDED.tracking_mode`, values)
+      await pool.query(`INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,published)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,false)
+        ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,category=EXCLUDED.category,restrictions=EXCLUDED.restrictions,giveaway=EXCLUDED.giveaway,promo_code_encrypted=EXCLUDED.promo_code_encrypted,redemption_method=EXCLUDED.redemption_method,redemption_payload_encrypted=EXCLUDED.redemption_payload_encrypted,display_ttl_seconds=EXCLUDED.display_ttl_seconds,usage_limit_count=EXCLUDED.usage_limit_count,usage_limit_period=EXCLUDED.usage_limit_period,usage_limit_scope=EXCLUDED.usage_limit_scope,tracking_mode=EXCLUDED.tracking_mode,published=false`, values)
       if (channel === 'in_person') await pool.query('INSERT INTO deal_locations(deal_id,business_location_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [row[0], `${row[1]}:primary`])
     }
   } finally { await pool.end() }

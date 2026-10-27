@@ -59,15 +59,17 @@ export function haversineDistanceM(from: Coordinates, to: Coordinates): number {
  */
 export function validateProximity(input: ProximityCheckInput): ProximityCheckResult {
   const now = input.now ?? new Date()
-  const maxAgeMs = input.maxAgeMs ?? 120_000
-  const maxFutureSkewMs = input.maxFutureSkewMs ?? 30_000
+  const maxAgeMs = input.maxAgeMs ?? 30_000
+  const maxFutureSkewMs = input.maxFutureSkewMs ?? 5_000
   const { observation, target, radiusM } = input
   const observedAt = parseObservationDate(observation.observedAt)
 
   if (!validCoordinate(observation.latitude, -90, 90) || !validCoordinate(observation.longitude, -180, 180)
     || !validCoordinate(target.latitude, -90, 90) || !validCoordinate(target.longitude, -180, 180)
     || !Number.isFinite(radiusM) || radiusM <= 0
-    || !Number.isFinite(observation.accuracyM) || observation.accuracyM < 0
+    || !Number.isFinite(observation.accuracyM) || observation.accuracyM <= 0
+    || !Number.isFinite(now.getTime()) || !Number.isFinite(maxAgeMs) || maxAgeMs < 0
+    || !Number.isFinite(maxFutureSkewMs) || maxFutureSkewMs < 0
     || !observedAt) {
     return { decision: 'invalid', distanceM: null, accuracyM: null, observedAt, reason: 'invalid_location_observation' }
   }

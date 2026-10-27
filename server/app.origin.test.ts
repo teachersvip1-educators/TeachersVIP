@@ -40,6 +40,7 @@ describe('production request origin protection', () => {
     const response = await createApp().inject({ method: 'GET', url: '/health/live' })
     expect(response.statusCode).toBe(200)
     expect(response.headers['content-security-policy']).toContain("img-src 'self' data: https://images.unsplash.com")
+    expect(response.headers['permissions-policy']).toBe('geolocation=(self)')
   })
 
   it('does not report readiness when the launch tables are missing', async () => {
@@ -112,7 +113,7 @@ describe('production request origin protection', () => {
       url: '/api/creator-network',
       headers: { origin: 'https://canonical.example.com' },
       payload: {
-        fullName: 'Taylor Creator', city: 'Austin', educatorEmail: 'taylor@example.edu',
+        fullName: 'Taylor Creator', city: 'Austin, Texas', educatorEmail: 'taylor@example.edu',
         contactInformation: '555 0100', socialHandles: '@taylor', platforms: ['Instagram'],
         followerRange: '1,000–4,999', contentNiches: ['Education'], sampleContent: 'https://example.edu/taylor',
         opportunityInterests: ['Paid content'], contactConsent: true,

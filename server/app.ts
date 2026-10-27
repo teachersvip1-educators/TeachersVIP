@@ -30,6 +30,7 @@ import {
 } from "./verification/index.js"
 import { activateDeal } from "./deals/activation.js"
 import { registerOfferInterestRoutes } from "./deals/interests.js"
+import { normalizeUsCity } from "../shared/us-city.js"
 import { isValidTimezone, withOpeningStatus } from "../shared/business-hours.js"
 
 const hoursIntervalSchema = z.object({
@@ -41,6 +42,13 @@ const openingHoursSchema = z.strictObject({ mon: dayHoursSchema, tue: dayHoursSc
 const timezoneSchema = z.string().trim().min(3).max(80).refine(isValidTimezone, { message: 'Enter a valid IANA timezone.' })
 
 const SESSION_COOKIE = "teachersvip_session"
+const usCitySchema = z.string().trim().min(2).max(100).transform((value, ctx) => {
+  const city = normalizeUsCity(value)
+  if (city) return city
+  ctx.addIssue({ code: 'custom', message: 'Enter a US city and state, for example Houston, Texas.' })
+  return z.NEVER
+})
+const offersEmailSchema = z.email().max(254).transform(value => value.toLowerCase()).nullable().optional()
 const allowedAnalytics = new Set([
   "business_listing_view",
   "deal_view",
@@ -51,6 +59,8 @@ const allowedAnalytics = new Set([
 type UserRow = {
   id: string
   personal_email: string
+  offers_email: string | null
+  is_demo: boolean
   first_name: string
   last_name: string
   mobile: string | null
@@ -89,8 +99,9 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
       personalEmail: "Email address",
       schoolEmail: "Email address",
       workEmail: "Email address",
+      offersEmail: "Personal email for offers",
       mobile: "Mobile number",
-      city: "City",
+      city: "City and State",
       password: "Password",
       businessName: "Business name",
       businessEmail: "Business email",
@@ -189,6 +200,11 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         : false,
   })
   app.register(rateLimit, { max: 180, timeWindow: "1 minute" })
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header('Permissions-Policy', 'geolocation=(self)')
+    if (request.routeOptions.url === '/api/deals/:id/activate') reply.header('Cache-Control', 'no-store')
+    return payload
+  })
 
   app.decorateRequest("currentUser", null)
   app.addHook("onRequest", async (request) => {
@@ -222,12 +238,16 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const raw = request.cookies[SESSION_COOKIE]
     if (!raw) return
     const result = await db.query<UserRow>(
-      `SELECT u.id,u.personal_email,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.email_updates,u.work_email,u.educator_verified_at,u.is_superadmin,
+      `SELECT u.id,u.personal_email,u.offers_email,u.is_demo,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.email_updates,u.work_email,u.educator_verified_at,u.is_superadmin,
       (SELECT c.status FROM educator_verification_cases c WHERE c.user_id=u.id ORDER BY c.created_at DESC LIMIT 1) verification_status
       FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now()`,
       [tokenHash(raw)],
     )
     request.currentUser = result.rows[0] ?? null
+    if (request.currentUser?.is_demo && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)
+      && !['/api/auth/sign-out', '/api/auth/sign-in', '/api/analytics/events'].includes(request.routeOptions.url ?? '')) {
+      throw Object.assign(new Error('Demo preview is read-only. Educator membership is required to RSVP or use offers.'), { statusCode: 403 })
+    }
   })
 
   const requireUser = (request: FastifyRequest) => {
@@ -239,7 +259,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   }
   const requireVerified = (request: FastifyRequest) => {
     const user = requireUser(request)
-    if (!user.educator_verified_at)
+    if (user.is_demo || !user.educator_verified_at)
       throw Object.assign(new Error("Educator verification required"), {
         statusCode: 403,
       })
@@ -250,7 +270,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     .filter(Boolean)
   const isSuperadmin = (user: UserRow | null) =>
     Boolean(
-      user &&
+      user && !user.is_demo &&
         (user.is_superadmin ||
           configuredSuperadmins.includes(user.personal_email.toLowerCase())),
     )
@@ -266,7 +286,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   const sendCityDealAlerts = async (dealId: string) => {
     if (!resend || !config.MARKETING_POSTAL_ADDRESS) return
     const recipients = await db.query<{ user_id: string, email: string, city: string, title: string, unsubscribe_token: string }>(
-      `SELECT DISTINCT a.user_id,a.email,a.city,a.unsubscribe_token,d.title FROM city_deal_alerts a
+      `SELECT DISTINCT a.user_id,COALESCE(u.offers_email,u.work_email,u.personal_email) email,a.city,a.unsubscribe_token,d.title FROM city_deal_alerts a
+       JOIN users u ON u.id=a.user_id AND NOT u.is_demo
        JOIN deals d ON d.id=$1 AND d.published AND d.channel='in_person'
          AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())
        JOIN businesses b ON b.id=d.business_id AND b.published
@@ -625,8 +646,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           firstName: z.string().trim().min(2).max(80),
           lastName: z.string().trim().min(2).max(80),
           schoolEmail: z.email().transform((v) => v.toLowerCase()),
+          offersEmail: offersEmailSchema,
           mobile: z.string().trim().max(30).optional(),
-          city: z.string().trim().min(2).max(100),
+          city: usCitySchema,
           password: z.string().min(8).max(128),
           smsConsent: z.boolean().default(false),
           role: z.enum(["K-12 educator", "College professor"]),
@@ -646,8 +668,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       try {
         await client.query("BEGIN")
         await client.query(
-          `INSERT INTO users(id,personal_email,password_hash,first_name,last_name,mobile,city,sms_consent,sms_consent_version,sms_consented_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          `INSERT INTO users(id,personal_email,password_hash,first_name,last_name,mobile,city,sms_consent,sms_consent_version,sms_consented_at,offers_email)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
           [
             id,
             body.schoolEmail,
@@ -659,6 +681,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             body.smsConsent,
             body.smsConsent ? "v1-2026-08" : null,
             body.smsConsent ? new Date() : null,
+            body.offersEmail ?? null,
           ],
         )
         await client.query(
@@ -870,7 +893,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           lastName: z.string().trim().min(2).max(80),
           email: z.email().transform((value) => value.toLowerCase()),
           password: z.string().min(12).max(128),
-          city: z.string().trim().min(2).max(100),
+          city: usCitySchema,
         }),
         request.body,
       )
@@ -896,11 +919,16 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         const existing = await client.query<{
           id: string
           password_hash: string
+          is_demo: boolean
         }>(
-          "SELECT id,password_hash FROM users WHERE personal_email=$1 FOR UPDATE",
+          "SELECT id,password_hash,is_demo FROM users WHERE personal_email=$1 FOR UPDATE",
           [body.email],
         )
         if (existing.rows[0]) {
+          if (existing.rows[0].is_demo) {
+            await client.query('ROLLBACK')
+            return reply.code(403).send({ error: 'The demo preview account cannot become an administrator.' })
+          }
           if (
             !(await verifyPassword(
               body.password,
@@ -996,7 +1024,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         ),
         { rows: [] } as { rows: unknown[] },
       ),
-      optionalQuery(db.query(`SELECT COUNT(*)::int count FROM users`), {
+      optionalQuery(db.query(`SELECT COUNT(*)::int count FROM users WHERE NOT is_demo`), {
         rows: [{ count: 0 }],
       } as { rows: { count: number }[] }),
       optionalQuery(
@@ -2441,10 +2469,10 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   app.get("/api/me", async (request) => {
     const user = requireUser(request)
     const result = await db.query(
-      `SELECT u.id,u.personal_email,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.email_updates,u.work_email,u.educator_verified_at,m.member_id,
+      `SELECT u.id,u.personal_email,u.offers_email,u.is_demo,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.email_updates,u.work_email,u.educator_verified_at,m.member_id,
       COALESCE((SELECT sum(d.estimated_savings_cents) FROM deal_activations a JOIN deals d ON d.id=a.deal_id WHERE a.user_id=u.id AND a.outcome='successful'),0)::int estimated_savings_cents,
       COALESCE((SELECT count(*) FROM deal_activations a WHERE a.user_id=u.id AND a.outcome='successful'),0)::int activation_count
-      FROM users u JOIN member_cards m ON m.user_id=u.id WHERE u.id=$1`,
+      FROM users u LEFT JOIN member_cards m ON m.user_id=u.id WHERE u.id=$1`,
       [user.id],
     )
     return { profile: result.rows[0] }
@@ -2457,14 +2485,15 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         firstName: z.string().trim().min(2).max(80),
         lastName: z.string().trim().min(2).max(80),
         mobile: z.string().trim().max(30).nullable(),
-        city: z.string().trim().min(2).max(100),
+        city: usCitySchema,
+        offersEmail: offersEmailSchema,
         smsConsent: z.boolean(),
         emailUpdates: z.boolean(),
       }),
       request.body,
     )
     await db.query(
-      `UPDATE users SET first_name=$1,last_name=$2,mobile=$3,city=$4,sms_consent=$5,email_updates=$6,
+      `UPDATE users SET first_name=$1,last_name=$2,mobile=$3,city=$4,sms_consent=$5,email_updates=$6,offers_email=$8,
       sms_consent_version=CASE WHEN $5 THEN 'v1-2026-08' ELSE sms_consent_version END,
       sms_consented_at=CASE WHEN $5 AND NOT sms_consent THEN now() ELSE sms_consented_at END,updated_at=now() WHERE id=$7`,
       [
@@ -2475,6 +2504,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         body.smsConsent,
         body.emailUpdates,
         user.id,
+        body.offersEmail === undefined ? user.offers_email : body.offersEmail,
       ],
     )
     return { ok: true }
@@ -2603,7 +2633,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           locationId: z.string().min(1).max(160).optional(),
           lat: z.number().min(-90).max(90).optional(),
           lng: z.number().min(-180).max(180).optional(),
-          accuracy: z.number().min(0).max(100000).optional(),
+          accuracy: z.number().positive().max(100000).optional(),
           locationTimestamp: z.string().datetime().optional(),
           idempotencyKey: z.string().uuid(),
         }),
@@ -2755,6 +2785,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   })
 
   app.post("/api/analytics/events", async (request) => {
+    // Preview browsing must not inflate real member activity or reject the
+    // client's background telemetry requests. Acknowledge without recording.
+    if (request.currentUser?.is_demo) return { ok: true }
     const body = parse(
       z.object({
         eventType: z.string(),
@@ -2793,7 +2826,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       const body = parse(
         z.object({
           fullName: z.string().trim().min(2).max(140),
-          city: z.string().trim().min(2).max(120),
+          city: usCitySchema,
           educatorEmail: z.email().transform((value) => value.toLowerCase()),
           contactInformation: z.string().trim().min(5).max(500),
           socialHandles: z.string().trim().min(2).max(1000),
@@ -3188,10 +3221,10 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
 
   app.put('/api/me/city-alert', async (request) => {
     const user = requireVerified(request)
-    const body = parse(z.object({ city: z.string().trim().min(2).max(120), active: z.boolean() }), request.body)
+    const body = parse(z.object({ city: usCitySchema, active: z.boolean() }), request.body)
     await db.query(`INSERT INTO city_deal_alerts(user_id,city,email,active,unsubscribe_token) VALUES($1,$2,$3,$4,$5)
       ON CONFLICT(user_id) DO UPDATE SET city=EXCLUDED.city,email=EXCLUDED.email,active=EXCLUDED.active,updated_at=now()`,
-      [user.id, body.city, user.personal_email, body.active, randomUUID()])
+      [user.id, body.city, user.offers_email || user.work_email || user.personal_email, body.active, randomUUID()])
     return { ok: true, deliveryReady: Boolean(resend && config.MARKETING_POSTAL_ADDRESS) }
   })
 
@@ -3203,7 +3236,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
 
   app.post('/api/business-suggestions', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
     const user = requireVerified(request)
-    const body = parse(z.object({ businessName: z.string().trim().min(2).max(140), city: z.string().trim().min(2).max(120), locationHint: z.string().trim().max(300).optional(), reason: z.string().trim().max(1000).optional() }), request.body)
+    const body = parse(z.object({ businessName: z.string().trim().min(2).max(140), city: usCitySchema, locationHint: z.string().trim().max(300).optional(), reason: z.string().trim().max(1000).optional() }), request.body)
     const id = randomUUID()
     await db.query('INSERT INTO business_suggestions(id,user_id,business_name,city,location_hint,reason) VALUES($1,$2,$3,$4,$5,$6)', [id,user.id,body.businessName,body.city,body.locationHint || null,body.reason || null])
     return reply.code(201).send({ ok: true, id })
@@ -3270,21 +3303,31 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   app.get('/api/admin/launch-analytics', async (request) => {
     requireSuperadmin(request)
     const [totals, cities, viewed, saved] = await Promise.all([
-      db.query(`SELECT (SELECT count(*)::int FROM users) registrations,
-        (SELECT count(*)::int FROM users WHERE educator_verified_at IS NOT NULL) verified_educators,
+      db.query(`SELECT (SELECT count(*)::int FROM users WHERE NOT is_demo) registrations,
+        (SELECT count(*)::int FROM users WHERE educator_verified_at IS NOT NULL AND NOT is_demo) verified_educators,
         (SELECT count(*)::int FROM deal_activations WHERE outcome='successful' AND activation_type='verified_on_site') verified_on_site_activations,
         (SELECT count(*)::int FROM deal_activations WHERE outcome='successful' AND activation_type='online_offer_access') online_code_reveals,
         (SELECT count(*)::int FROM business_reviews) reviews_submitted,
         (SELECT count(*)::int FROM creator_network_submissions WHERE email_verified_at IS NOT NULL) creator_applications,
         (SELECT count(*)::int FROM business_applications) business_inquiries`),
-      db.query(`SELECT city,count(*)::int signups FROM users GROUP BY city ORDER BY signups DESC LIMIT 30`),
+      db.query(`SELECT city,count(*)::int signups FROM users WHERE NOT is_demo GROUP BY city ORDER BY signups DESC LIMIT 30`),
       db.query(`SELECT d.id,d.title,count(*)::int views FROM analytics_events a JOIN deals d ON d.id=a.deal_id WHERE a.event_type='deal_view' GROUP BY d.id,d.title ORDER BY views DESC LIMIT 10`),
       db.query(`SELECT d.id,d.title,count(*)::int saves FROM saved_deals s JOIN deals d ON d.id=s.deal_id GROUP BY d.id,d.title ORDER BY saves DESC LIMIT 10`),
     ])
     return { totals: totals.rows[0], cities: cities.rows, viewed: viewed.rows, saved: saved.rows }
   })
 
-  registerOfferInterestRoutes(app, db, requireVerified, requireSuperadmin)
+  registerOfferInterestRoutes(app, db, requireVerified, requireSuperadmin, async (submission) => {
+    if (!resend) return false
+    const { error } = await resend.emails.send({
+      from: config.RESEND_FROM_EMAIL,
+      to: submission.email,
+      subject: `Thanks for RSVPing to ${submission.event_name}`,
+      text: `Thank you for RSVPing!\n\nYour RSVP for ${submission.event_name} with ${submission.business_name} is confirmed.\n\nYou can view the event details at ${config.APP_URL}/deals/${encodeURIComponent(submission.deal_id)}.\n\nTeachersVIP`,
+    })
+    if (error) throw error
+    return true
+  })
 
   app.setErrorHandler((error: any, request, reply) => {
     app.log.error(error)

@@ -21,11 +21,30 @@ The educator-domain registry is built from downloaded releases from:
 
 Imported domains begin in manual review. An administrator must record staff-only evidence before enabling automatic approval. This avoids treating a public website domain as proof that its email accounts are faculty-only.
 
+## Offers email, US locations and demo preview
+
+Members can send offers and RSVP confirmations to a personal email during signup or under **Profile → Edit Account Information**. The school email remains the login and verification email. Turning the personal-email option off returns delivery to work email. City alerts resolve the current preference when sending; interest lists capture it at submission time. Existing email-update and city-alert opt-ins still apply.
+
+City suggestions and member city fields use **City and State** for the United States, for example `Houston, Texas`. Participating business locations still use full street addresses.
+
+A successful RSVP shows **Thank you for RSVPing!** with the event name. The first RSVP also sends a confirmation through configured Resend delivery. Duplicate submissions do not send another email. Email failure preserves the RSVP and on-screen confirmation; the UI only reports an email sent when the provider accepts it.
+
+Migration `022_member_preferences_and_preview.sql` hides the nine seeded sample businesses and their offers without deleting history. Subsequent seed runs keep them unpublished. The public homepage displays published offers instead of hardcoded sample artwork.
+
+The migration also provisions one shared demo preview login:
+
+- Email: `demo@teachersvip.net`
+- Password: `VIPpreview!2026`
+
+This intentionally shared, read-only account can browse published offers without educator verification. It cannot RSVP, activate or save offers, modify information, access administrator data, or receive a VIP card/wallet pass. It is excluded from registration analytics. Run migrations before using these credentials in an existing environment; building the client does not provision a live account.
+
 ## Deal activation route
 
 For an in-person offer, a verified educator selects a participating location and presses **Use Deal**. The browser asks for current location, and the server checks the observation timestamp, accuracy, selected location, approved radius, and usage limit. A successful activation records the educator, business, location, offer, date, time, distance, and accuracy, then returns the configured POS instruction, coupon code, or barcode for a limited time. **Get Directions** remains secondary, and the VIP Card remains available as proof of status.
 
 Online offers use the same controlled activation and usage-limit service without requesting geolocation.
+
+Location verification requires a positive accuracy value, a reading from the current browser request, and a server-checked observation no more than 30 seconds old (up to 5 seconds of future clock skew). The full accuracy circle must fit within the approved location radius. Hidden tabs and page navigation cancel active checks, API verification is bounded to 15 seconds, and retries after an ambiguous network failure reuse the attempt key to avoid counting a use twice. Published offer/business status and the active participating location are checked before re-disclosing an earlier activation.
 
 The dashboard labels successful in-person records **Verified On-Site Deal Activations** and reports unique educators, repeat usage, and activity by business/location. These records establish proximity and access to an offer; they do not establish a completed purchase. Exact completed-purchase reporting requires the optional enhanced POS integration.
 
@@ -73,7 +92,7 @@ Requirements: Node.js 24+, pnpm, and PostgreSQL 17+.
 
 The Vite client runs on port 8443 and proxies API requests to Fastify on port 8787.
 
-Configure the server-only `MAPBOX_PUBLIC_TOKEN` to enable global city and street-address suggestions from the first typed character. Autocomplete requests are temporary and are not cached. When a partner selects a Mapbox address, the server resolves it with permanent geocoding before storing the normalized address, coordinates, IANA timezone, and provider provenance. When Mapbox is not configured or unavailable, city fallback suggestions and manual address entry remain available.
+Configure the server-only `MAPBOX_PUBLIC_TOKEN` to enable US city and street-address suggestions from the first typed character. Autocomplete requests are temporary and are not cached. When a partner selects a Mapbox address, the server resolves it with permanent geocoding before storing the normalized address, coordinates, IANA timezone, and provider provenance. When Mapbox is not configured or unavailable, US city fallback suggestions and manual address entry remain available.
 
 ## Importing official education data
 

@@ -5,7 +5,7 @@ import type { DbPool } from '../db/pool'
 
 const apps: ReturnType<typeof Fastify>[] = []
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())) })
-function setup(role: 'anonymous' | 'unverified' | 'member' | 'admin' = 'member') {
+function setup(role: 'anonymous' | 'unverified' | 'member' | 'admin' = 'member', sendRsvpConfirmation?: (submission: any) => Promise<boolean>) {
   const app = Fastify(); apps.push(app)
   const query = vi.fn()
   const authorize = (admin = false) => () => {
@@ -13,11 +13,42 @@ function setup(role: 'anonymous' | 'unverified' | 'member' | 'admin' = 'member')
     if (role === 'unverified' || admin && role !== 'admin') throw Object.assign(new Error('Access required'), { statusCode: 403 })
     return { id: 'member-user-id' }
   }
-  registerOfferInterestRoutes(app, { query } as unknown as DbPool, authorize(), authorize(true))
+  registerOfferInterestRoutes(app, { query } as unknown as DbPool, authorize(), authorize(true), sendRsvpConfirmation)
   return { app, query }
 }
 
 describe('offer interest authorization and repeat submissions', () => {
+  const rsvp = { id: 'submission', submitted_at: '2026-10-28T00:00:00Z', cta_type: 'rsvp', email: 'personal@example.test', event_name: 'Educator evening', business_name: 'Partner', deal_id: 'event' }
+  it('sends a thank-you to the selected email only on the first RSVP', async () => {
+    const send = vi.fn().mockResolvedValue(true)
+    const { app, query } = setup('member', send)
+    query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [rsvp] })
+    const first = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
+    expect(first.statusCode).toBe(201)
+    expect(first.json().confirmationEmailSent).toBe(true)
+    expect(send).toHaveBeenCalledWith(rsvp)
+    expect(query.mock.calls[1][0]).toContain('COALESCE(u.offers_email,u.work_email,u.personal_email)')
+    query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [rsvp] })
+    const repeat = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
+    expect(repeat.json().alreadySubmitted).toBe(true)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+  it('keeps the RSVP saved if confirmation delivery fails', async () => {
+    const { app, query } = setup('member', vi.fn().mockRejectedValue(new Error('Mail unavailable')))
+    query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [rsvp] })
+    const response = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({ submission: { id: 'submission' }, confirmationEmailSent: false })
+  })
+  it('does not send RSVP confirmation for waitlists or launch-invite requests', async () => {
+    const send = vi.fn()
+    const { app, query } = setup('member', send)
+    for (const cta_type of ['join_waitlist', 'get_launch_invite']) {
+      query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [{ ...rsvp, cta_type }] })
+      expect((await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })).statusCode).toBe(201)
+    }
+    expect(send).not.toHaveBeenCalled()
+  })
   it.each(['anonymous', 'unverified'] as const)('requires verified signup before writing for %s users', async role => {
     const { app, query } = setup(role)
     const response = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })

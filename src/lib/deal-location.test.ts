@@ -23,6 +23,18 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-21T12:
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe("deal location acquisition", () => {
+  it('ignores cached readings predating this attempt even if they are otherwise fresh', async () => {
+    const g = gps(), done = vi.fn()
+    const promise = g.start().then(done)
+    g.emit(fix(5, target.latitude, Date.now() - 5000))
+    await Promise.resolve()
+    expect(done).not.toHaveBeenCalled()
+    expect(g.onProgress).not.toHaveBeenCalled()
+    const current = fix()
+    g.emit(current)
+    await promise
+    expect(done).toHaveBeenCalledExactlyOnceWith(current)
+  })
   it("waits through a coarse first fix and submits the precise observation with its real timestamp", async () => {
     const g = gps(), done = vi.fn()
     const promise = g.start().then(done)

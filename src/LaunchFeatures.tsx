@@ -149,11 +149,12 @@ export function CityAlert({ city, email }: { city: string; email: string }) {
       <p>Get an email when a new in-person offer is published in your city.</p>
       <form className="launch-inline-form" onSubmit={save}>
         <label>
-          City
+          City and State
           <input
             required
             minLength={2}
             maxLength={120}
+            placeholder="e.g. Houston, Texas"
             value={chosenCity}
             onChange={(event) => setChosenCity(event.target.value)}
           />
@@ -212,7 +213,7 @@ export function SuggestBusiness({ city }: { city: string }) {
                 />
               </label>
               <label>
-                City
+                City and State
                 <input
                   name="city"
                   defaultValue={city}
@@ -452,7 +453,7 @@ export function InformationPage({
               Creator applications, suggestions, reports, reviews, and contact
               messages are available to the TeachersVIP admin team for the
               purposes described when you submit them. Approved reviews and
-              comments may appear publicly. City alerts use your account email
+              comments may appear publicly. City alerts use your preferred offers email
               and can be turned off in Discover or through the unsubscribe link
               in each alert.
             </p>

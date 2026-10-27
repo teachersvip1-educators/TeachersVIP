@@ -93,6 +93,7 @@ import {
 } from "./AdminWorkspace"
 
 import { withOpeningStatus, type WeeklyHours } from "../shared/business-hours"
+import { normalizeUsCity } from "../shared/us-city"
 
 import { useOpeningStatus } from "./lib/business-hours"
 
@@ -100,6 +101,8 @@ type SessionUser = {
   id: string
 
   personal_email: string
+  offers_email: string | null
+  is_demo?: boolean
 
   first_name: string
 
@@ -357,6 +360,14 @@ function PublicHeader() {
 }
 
 function PublicHome() {
+  const [offers, setOffers] = useState<Deal[]>([])
+  useEffect(() => {
+    let active = true
+    api<{ deals: Deal[] }>('/deals').then(result => {
+      if (active) setOffers(result.deals.slice(0, 3))
+    }).catch(() => { /* Keep the invitation visible if discovery is unavailable. */ })
+    return () => { active = false }
+  }, [])
   return (
     <main className="public-site">
       <PublicHeader />
@@ -381,28 +392,19 @@ function PublicHome() {
           </Link>
         </div>
         <div className="public-offers">
-          <h2 className="public-offers-heading">Preview Sample Offers</h2>
+          <h2 className="public-offers-heading">Featured Educator Offers</h2>
           <div
             className="public-collage"
             role="region"
             tabIndex={0}
-            aria-label="Preview sample educator offers"
+            aria-label="Featured educator offers"
           >
-            <figure className="public-collage-main">
-              <img
-                src="/The Teacher Edit.jpeg"
-                alt="20% off at The Teacher Edit"
-              />
-            </figure>
-            <figure>
-              <img
-                src="/GoldenHourCoffee.jpeg"
-                alt="Free pastry at Golden Hour Coffee"
-              />
-            </figure>
-            <figure>
-              <img src="/LuxeTheory.jpeg" alt="15% off at Luxe Theory" />
-            </figure>
+            {offers.map((offer, index) => <figure key={offer.id} className={index === 0 ? 'public-collage-main' : ''}>
+              <Link to={`/deals/${offer.id}`} aria-label={`${offer.business_name}: ${offer.title}`}>
+                <img src={offer.image_url} alt={`${offer.title} at ${offer.business_name}`} />
+              </Link>
+            </figure>)}
+            {!offers.length && <div className="notice"><strong>Local perks are on the way.</strong><p>Join TeachersVIP to discover offers from participating US businesses as they launch.</p></div>}
           </div>
         </div>
       </section>
@@ -859,7 +861,7 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
               </div>
               <div className="two">
                 <Field label="Full name" name="fullName" required />
-                <Field label="City" name="city" required />
+                <ProfileCity initialCity={user?.city || ''} />
               </div>
               <div className="two">
                 <div>
@@ -1204,9 +1206,9 @@ function CityAutocomplete({
 
   kind = "city",
 
-  label = "City and province/state",
+  label = "City and State",
 
-  placeholder = "Start typing your city",
+  placeholder = "e.g. Houston, Texas",
 
   inputName = "city",
 
@@ -1292,7 +1294,7 @@ function CityAutocomplete({
 
                 label:
                   result.displayName ||
-                  [result.name, result.state, result.country]
+                  [result.name, result.state]
 
                     .filter(Boolean)
 
@@ -1325,7 +1327,7 @@ function CityAutocomplete({
             return {
               ...result,
 
-              label: [city, address.state, address.country]
+              label: [city, address.state]
 
                 .filter(Boolean)
 
@@ -1396,8 +1398,12 @@ function CityAutocomplete({
             activeIndex >= 0 ? `${idPrefix}-option-${activeIndex}` : undefined
           }
           onFocus={() => setOpen(true)}
-          onBlur={() => window.setTimeout(() => setOpen(false), 160)}
+          onBlur={(event) => {
+            if (kind === 'city') event.currentTarget.setCustomValidity(normalizeUsCity(value) ? '' : 'Enter a US city and state, for example Houston, Texas.')
+            window.setTimeout(() => setOpen(false), 160)
+          }}
           onChange={(event) => {
+            event.target.setCustomValidity('')
             onChange(event.target.value)
 
             setOpen(true)
@@ -1461,6 +1467,23 @@ function CityAutocomplete({
   )
 }
 
+function PersonalOffersEmail({ initialEmail }: { initialEmail?: string | null }) {
+  const [enabled, setEnabled] = useState(Boolean(initialEmail))
+  return <>
+    <label className="check">
+      <input type="checkbox" name="usePersonalEmail" checked={enabled} onChange={event => setEnabled(event.target.checked)} />
+      <span>Send offers and RSVP confirmations to my personal email instead of my work email.</span>
+    </label>
+    {enabled && <Field label="Personal email for offers" name="offersEmail" type="email" defaultValue={initialEmail || ''} required maxLength={254} />}
+    <p className="field-note">Your school email is still used for sign-in and educator verification.</p>
+  </>
+}
+
+function ProfileCity({ initialCity }: { initialCity: string }) {
+  const [city, setCity] = useState(normalizeUsCity(initialCity) || initialCity)
+  return <CityAutocomplete value={city} onChange={setCity} idPrefix="profile-city" />
+}
+
 function Register({ refresh }: { refresh: RefreshSession }) {
   const [city, setCity] = useState(""),
     [error, setError] = useState(""),
@@ -1487,6 +1510,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           workEmail: data.get("workEmail"),
 
           schoolEmail: data.get("workEmail"),
+          offersEmail: data.get('usePersonalEmail') === 'on' ? data.get('offersEmail') : null,
 
           role: data.get("role"),
 
@@ -1537,6 +1561,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           email is the first step; educator eligibility must also be approved
           before you can RSVP or access offers.
         </p>
+        <PersonalOffersEmail />
         <label className="field">
           <span>Your role</span>
           <select name="role" required defaultValue="">
@@ -1647,7 +1672,7 @@ function AdminRegister({ refresh }: { refresh: RefreshSession }) {
           <Field label="Last name" name="lastName" required minLength={2} />
         </div>
         <Field label="Admin email" name="email" type="email" required />
-        <Field label="City" name="city" required minLength={2} />
+        <ProfileCity initialCity="" />
         <Field
           label="Account password"
           name="password"
@@ -1701,7 +1726,7 @@ function SignIn({ refresh }: { refresh: RefreshSession }) {
 
       const nextUser = await refresh()
 
-      navigate(nextUser?.verified ? pendingOfferDestination() : "/verify")
+      navigate(nextUser?.is_demo ? '/deals' : nextUser?.verified ? pendingOfferDestination() : "/verify")
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -2128,7 +2153,7 @@ function Shell({
           <small>
             {user.is_superadmin
               ? "Superadmin"
-              : user.verified
+              : user.is_demo ? "Demo preview" : user.verified
                 ? "Verified Educator"
                 : "Verification pending"}
           </small>
@@ -2142,11 +2167,12 @@ function Shell({
             <ShieldCheck size={14} weight="fill" />
             {user.is_superadmin
               ? "Superadmin"
-              : user.verified
+              : user.is_demo ? "Demo preview" : user.verified
                 ? "Verified Educator"
                 : "Verification pending"}
           </span>
         </header>
+        {user.is_demo && <div className="notice" role="status"><strong>Demo preview</strong><p>Explore TeachersVIP in read-only mode. RSVPs, offer redemption and educator membership benefits require a verified educator account.</p></div>}
         {children}
         <SiteFooter />
         <nav className="mobile-nav" aria-label="Primary navigation">
@@ -2219,12 +2245,14 @@ function DealCard({
   deal,
 
   onSave,
+  readOnly = false,
 
   onReview,
 }: {
   deal: Deal
 
   onSave: (deal: Deal) => void
+  readOnly?: boolean
 
   onReview: (deal: Deal) => void
 }) {
@@ -2312,6 +2340,8 @@ function DealCard({
       <button
         className={`save ${deal.saved ? "saved" : ""}`}
         aria-label={deal.saved ? "Remove saved deal" : "Save deal"}
+        disabled={readOnly}
+        title={readOnly ? 'Saving offers is unavailable in demo preview' : undefined}
         onClick={() => onSave(deal)}
       >
         <Heart size={20} weight={deal.saved ? "fill" : "regular"} />
@@ -2455,6 +2485,7 @@ function Discover({ user }: { user: SessionUser }) {
                     key={d.id}
                     deal={d}
                     onSave={toggle}
+                    readOnly={user.is_demo}
                     onReview={(deal) =>
                       navigate(`/deals/${deal.id}#business-reviews`)
                     }
@@ -2475,6 +2506,7 @@ function Discover({ user }: { user: SessionUser }) {
                     key={d.id}
                     deal={d}
                     onSave={toggle}
+                    readOnly={user.is_demo}
                     onReview={(deal) =>
                       navigate(`/deals/${deal.id}#business-reviews`)
                     }
@@ -2491,7 +2523,7 @@ function Discover({ user }: { user: SessionUser }) {
           text="Try a different search or category."
         />
       )}
-      {!loading &&
+      {!user.is_demo && !loading &&
         !deals.some(
           (deal) =>
             deal.channel === "in_person" &&
@@ -2500,11 +2532,11 @@ function Discover({ user }: { user: SessionUser }) {
               .includes(`, ${user.city.split(",")[0].trim().toLowerCase()},`),
         ) && (
           <CityAlert
-            city={user.city.split(",")[0].trim()}
-            email={user.personal_email}
+            city={user.city}
+            email={user.offers_email || user.work_email || user.personal_email}
           />
         )}
-      <SuggestBusiness city={user.city} />
+      {!user.is_demo && <SuggestBusiness city={user.city} />}
     </Page>
   )
 }
@@ -2839,6 +2871,7 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
     [error, setError] = useState("")
 
   const locationRequest = useRef<AbortController | null>(null)
+  const activationAttempt = useRef<{ locationId: string; key: string } | null>(null)
   const [locationProgress, setLocationProgress] = useState("")
   const [locationHelp, setLocationHelp] = useState(false)
   const [locating, setLocating] = useState(false)
@@ -2851,11 +2884,25 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
     setLocating(false)
     setLocationProgress("")
     setLocationHelp(false)
+    activationAttempt.current = null
     return () => {
       locationRequest.current?.abort()
       locationRequest.current = null
     }
   }, [id])
+
+  useEffect(() => {
+    const cancelWhenHidden = () => {
+      if (document.visibilityState === 'hidden') locationRequest.current?.abort()
+    }
+    const cancel = () => locationRequest.current?.abort()
+    document.addEventListener('visibilitychange', cancelWhenHidden)
+    window.addEventListener('pagehide', cancel)
+    return () => {
+      document.removeEventListener('visibilitychange', cancelWhenHidden)
+      window.removeEventListener('pagehide', cancel)
+    }
+  }, [])
 
   const isOpen = useOpeningStatus(deal)
 
@@ -2978,6 +3025,7 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
     }
     const controller = new AbortController()
     locationRequest.current = controller
+    let verificationTimer: ReturnType<typeof setTimeout> | undefined
     setBusy(true)
     setError("")
     setLocationHelp(false)
@@ -3004,6 +3052,13 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
       if (controller.signal.aborted) return
       setLocating(false)
       setLocationProgress("Verifying your offer…")
+      const attemptLocation = deal.channel === 'online' ? 'online' : selectedLocation.id
+      if (!activationAttempt.current || activationAttempt.current.locationId !== attemptLocation) {
+        activationAttempt.current = { locationId: attemptLocation, key: crypto.randomUUID() }
+      }
+      // Retain the key after an ambiguous network failure: retrying must not
+      // consume a second use if the server committed the first request.
+      verificationTimer = setTimeout(() => controller.abort(new DOMException('Verification timed out.', 'TimeoutError')), 15_000)
       const result = await api<Activation>("/deals/" + deal.id + "/activate", {
         method: "POST",
         signal: controller.signal,
@@ -3013,17 +3068,25 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
           lng: position?.coords.longitude,
           accuracy: position?.coords.accuracy,
           locationTimestamp: position ? new Date(position.timestamp).toISOString() : undefined,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: activationAttempt.current.key,
         }),
       })
-      if (!controller.signal.aborted) setActivation(result)
+      if (!controller.signal.aborted) {
+        activationAttempt.current = null
+        setActivation(result)
+      }
     } catch (e) {
+      if (e instanceof ApiError && e.status && e.status < 500 && e.details?.reason !== 'activation_in_progress') activationAttempt.current = null
+      if (controller.signal.aborted && controller.signal.reason?.name === 'TimeoutError') {
+        setError('Verification took too long. Tap Use Deal to retry safely; your previous request will not count twice.')
+      }
       if (!controller.signal.aborted) {
         const message = e instanceof Error ? e.message : "Your offer could not be verified. Please try again."
         setError(locationDenialMessage(message, e instanceof ApiError ? e.details : undefined))
         setLocationHelp(e instanceof DealLocationError || (e instanceof ApiError && ["low_accuracy", "location_permission_required"].includes(String(e.details?.reason))))
       }
     } finally {
+      clearTimeout(verificationTimer)
       if (locationRequest.current === controller) {
         locationRequest.current = null
         setBusy(false)
@@ -3163,7 +3226,7 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
           {!activation && locationProgress && (
             <div className="notice" role="status" aria-live="polite">
               <p>{locationProgress}</p>
-              {locating && <button className="action action-soft" type="button" onClick={() => locationRequest.current?.abort()}>Cancel location check</button>}
+              {busy && <button className="action action-soft" type="button" onClick={() => locationRequest.current?.abort()}>{locating ? 'Cancel location check' : 'Cancel verification'}</button>}
             </div>
           )}
           {activation ? (
@@ -5706,8 +5769,10 @@ function ActivationVipCardPage({ user }: { user: SessionUser }) {
 
 function ActivationProfilePage({
   onSignOut,
+  refresh,
 }: {
   onSignOut: () => Promise<void>
+  refresh: RefreshSession
 }) {
   const [profile, setProfile] = useState<Profile | null>(null),
     [records, setRecords] = useState<any[]>([]),
@@ -5757,9 +5822,11 @@ function ActivationProfilePage({
         smsConsent: false,
 
         emailUpdates: profile?.email_updates ?? false,
+        offersEmail: data.get('usePersonalEmail') === 'on' ? data.get('offersEmail') : null,
       })
 
       await load()
+      await refresh()
 
       setEditing(false)
 
@@ -5844,6 +5911,7 @@ function ActivationProfilePage({
         className="communication-status"
         aria-label="Communication preferences"
       >
+        <p>Offers and RSVP confirmations go to <strong>{profile.offers_email || profile.work_email || profile.personal_email}</strong>. Change this in Edit Account Information.</p>
         <button
           className="email-update-control"
           type="button"
@@ -5880,17 +5948,13 @@ function ActivationProfilePage({
             type="email"
             readOnly
           />
+          <PersonalOffersEmail initialEmail={profile.offers_email} />
           <Field
             label="Mobile number (optional)"
             name="mobile"
             defaultValue={profile.mobile || ""}
           />
-          <Field
-            label="City"
-            name="city"
-            defaultValue={profile.city}
-            required
-          />
+          <ProfileCity initialCity={profile.city} />
           <Button type="submit">Save Changes</Button>
           <Button variant="soft" onClick={() => setEditing(false)}>
             Cancel
@@ -7083,6 +7147,7 @@ function AppRoutes() {
   if (
     user &&
     !user.is_superadmin &&
+    !user.is_demo &&
     !user.verified &&
     !routeLocation.pathname.startsWith("/deals/") &&
     ![
@@ -7122,11 +7187,11 @@ function AppRoutes() {
         <Route path="/saved" element={<Saved />} />
         <Route
           path="/vip-card"
-          element={<ActivationVipCardPage user={user} />}
+          element={user.is_demo ? <Page title="VIP Card"><Notice>Demo preview does not issue an educator VIP card. Verified educators can access their card here.</Notice></Page> : <ActivationVipCardPage user={user} />}
         />
         <Route
           path="/profile"
-          element={<ActivationProfilePage onSignOut={signOut} />}
+          element={user.is_demo ? <Page title="Demo Preview"><p>Shared preview account: {user.personal_email}</p><p>Educators can manage their personal information, email preferences and membership here.</p><Button onClick={() => void signOut()}>Sign out</Button></Page> : <ActivationProfilePage onSignOut={signOut} refresh={refresh} />}
         />
         <Route path="/support" element={<ActivationSupport />} />
         <Route path="/contact" element={<ContactPage embedded />} />

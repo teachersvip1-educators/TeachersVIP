@@ -24,6 +24,8 @@ describe("on-site activation enforcement", () => {
     ["stale_location", { observedAt: "2026-10-21T11:55:00Z" }],
     ["invalid_location", { observedAt: "2026-10-21T12:05:00Z" }],
     ["invalid_location", { latitude: 95 }],
+    ["invalid_location", { accuracyM: 0 }],
+    ["stale_location", { observedAt: "2026-10-21T11:59:15Z" }],
   ])("denies %s before claiming usage or decrypting the offer", async (reason, override) => {
     const { db, query } = database(), decryptPayload = vi.fn()
     const result = await activateDeal({ db, userId: "member", dealId: deal.id, now, decryptPayload,
@@ -56,5 +58,13 @@ describe("on-site activation enforcement", () => {
     })
     expect(result).toMatchObject({ ok: true, status: "Location Verified", redemptionPayload: "VERIFIED-OFFER", distanceM: 0, accuracyM: 8 })
     expect(decryptPayload).toHaveBeenCalledOnce()
+  })
+  it('refuses to re-disclose a stored activation after its offer or location is revoked', async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rows: [{ id: 'previous', outcome: 'successful', business_location_id: location.id }] }).mockResolvedValueOnce({ rows: [] })
+    const decryptPayload = vi.fn()
+    const result = await activateDeal({ db: { query }, userId: 'member', dealId: deal.id, now, decryptPayload, request: { idempotencyKey: 'same-request' } })
+    expect(result).toMatchObject({ ok: false, reason: 'deal_unavailable' })
+    expect(decryptPayload).not.toHaveBeenCalled()
+    expect(query).toHaveBeenCalledTimes(2)
   })
 })

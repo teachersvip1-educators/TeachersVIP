@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from './app'
 import { getConfig } from './config'
 import { createPool } from './db/pool'
+import { encrypt } from './security'
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const suite = databaseUrl ? describe : describe.skip
@@ -13,6 +14,8 @@ suite('TeachersVIP educator verification and activation API', () => {
   const staffDomain = `staff-${suffix}.example.edu`
   const staffEmail = `professor@${staffDomain}`
   const creatorEmail = `creator-${suffix}@example.test`
+  const businessId = `api-test-business-${suffix}`
+  const dealId = `api-test-online-${suffix}`
   const config = getConfig({
     NODE_ENV: 'development', DATABASE_URL: databaseUrl ?? 'postgresql://test:test@localhost:5432/teachersvip_test',
     APP_URL: 'http://localhost:8443', SESSION_SECRET: 'integration-test-session-secret-32-characters',
@@ -23,6 +26,10 @@ suite('TeachersVIP educator verification and activation API', () => {
 
   beforeAll(async () => {
     await app.ready()
+    // Tests own their published offer; seeded sample offers are intentionally hidden.
+    await db.query(`INSERT INTO businesses(id,name,category,description,image_url) VALUES($1,'API test partner','Online','Integration fixture','/teachersvip-logo.png')`, [businessId])
+    await db.query(`INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,estimated_savings_cents,redemption_method,redemption_payload_encrypted,tracking_mode)
+      VALUES($1,$2,'API test offer','Integration fixture','online','Online','Test only',100,'coupon_code',$3,'online')`, [dealId, businessId, encrypt('EDUCATOR25', config.DATA_ENCRYPTION_KEY)])
     await db.query(`INSERT INTO educator_domains(id,normalized_domain,registrable_domain,classification,eligible_role,decision,evidence,evidence_url,reviewed_at)
       VALUES($1,$2,'example.edu','staff_only','College professor','auto_eligible','Integration-test staff-only evidence.','https://example.edu/faculty',now())`, [randomUUID(), staffDomain])
   })
@@ -30,6 +37,8 @@ suite('TeachersVIP educator verification and activation API', () => {
   afterAll(async () => {
     await db.query('DELETE FROM creator_network_submissions WHERE educator_email=ANY($1::citext[])', [[creatorEmail, staffEmail]])
     await db.query('DELETE FROM users WHERE personal_email=ANY($1::citext[])', [[personalEmail, staffEmail]])
+    await db.query('DELETE FROM deals WHERE id=$1', [dealId])
+    await db.query('DELETE FROM businesses WHERE id=$1', [businessId])
     await db.query('DELETE FROM educator_domains WHERE normalized_domain=$1', [staffDomain])
     await app.close()
     await db.end()
@@ -56,11 +65,11 @@ suite('TeachersVIP educator verification and activation API', () => {
     expect(confirmed.statusCode).toBe(200)
     expect(confirmed.json()).toMatchObject({ status: 'verified', walletStatus: 'not_configured' })
 
-    const activated = await app.inject({ method: 'POST', url: '/api/deals/teacher-tech-25/activate', headers: { cookie }, payload: { idempotencyKey: randomUUID() } })
+    const activated = await app.inject({ method: 'POST', url: `/api/deals/${dealId}/activate`, headers: { cookie }, payload: { idempotencyKey: randomUUID() } })
     expect(activated.statusCode).toBe(200)
     expect(activated.json()).toMatchObject({ activationType: 'online_offer_access', redemptionMethod: 'coupon_code', redemptionValue: 'EDUCATOR25' })
 
-    const legacyReport = await app.inject({ method: 'POST', url: '/api/deals/teacher-tech-25/report-use', headers: { cookie }, payload: { idempotencyKey: randomUUID() } })
+    const legacyReport = await app.inject({ method: 'POST', url: `/api/deals/${dealId}/report-use`, headers: { cookie }, payload: { idempotencyKey: randomUUID() } })
     expect(legacyReport.statusCode).toBe(410)
 
     const profile = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie } })
@@ -68,7 +77,7 @@ suite('TeachersVIP educator verification and activation API', () => {
 
     const publicCreator = await app.inject({
       method: 'POST', url: '/api/creator-network', payload: {
-        fullName: 'Public Creator', city: 'Austin', educatorEmail: creatorEmail,
+        fullName: 'Public Creator', city: 'Austin, Texas', educatorEmail: creatorEmail,
         contactInformation: '555 0100', socialHandles: '@publiccreator', platforms: ['Instagram'],
         followerRange: '1,000–4,999', contentNiches: ['Education'], sampleContent: 'https://example.test/sample',
         opportunityInterests: ['Paid content'], contactConsent: true,

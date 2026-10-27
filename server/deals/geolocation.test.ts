@@ -30,4 +30,16 @@ describe('deal geolocation validation', () => {
     expect(validateProximity({ observation: { latitude: 140, longitude: -75, accuracyM: 5, observedAt: now }, target, radiusM: 150, now }).decision).toBe('invalid')
     expect(validateProximity({ observation: { ...target, accuracyM: 5, observedAt: '2026-09-06T12:05:00.000Z' }, target, radiusM: 150, now }).decision).toBe('invalid')
   })
+  it('requires a fresh reading with positive accuracy and tolerates only small clock skew', () => {
+    const check = (accuracyM: number, observedAt: string) => validateProximity({ observation: { ...target, accuracyM, observedAt }, target, radiusM: 150, now }).decision
+    expect(check(5, '2026-09-06T11:59:15.000Z')).toBe('stale')
+    expect(check(5, '2026-09-06T12:00:06.000Z')).toBe('invalid')
+    expect(check(5, '2026-09-06T12:00:04.000Z')).toBe('inside')
+    expect(check(0, now.toISOString())).toBe('invalid')
+  })
+  it('fails closed for an invalid server clock or freshness policy', () => {
+    const input = { observation: { ...target, accuracyM: 5, observedAt: now }, target, radiusM: 150, now }
+    expect(validateProximity({ ...input, now: new Date(Number.NaN) }).decision).toBe('invalid')
+    expect(validateProximity({ ...input, maxAgeMs: Number.NaN }).decision).toBe('invalid')
+  })
 })

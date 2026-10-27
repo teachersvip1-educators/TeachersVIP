@@ -29,6 +29,7 @@ export function acquireDealLocation(options: LocationOptions): Promise<Geolocati
   }
 
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now()
     let watchId: number | undefined
     let settled = false
     let best: GeolocationPosition | undefined
@@ -71,7 +72,7 @@ export function acquireDealLocation(options: LocationOptions): Promise<Geolocati
       watchId = geolocation.watchPosition((position) => {
         if (settled) return
         const reading = check(position)
-        if (["invalid", "stale"].includes(reading.decision)) return
+        if (["invalid", "stale"].includes(reading.decision) || position.timestamp < startedAt - 1000) return
         if (!best || ["invalid", "stale"].includes(check(best).decision) || position.coords.accuracy <= best.coords.accuracy) best = position
         options.onProgress?.(check(best))
         if (reading.decision === "inside" || (reading.decision === "outside" && position.coords.accuracy <= Math.min(50, options.radiusM / 3))) finish(position)

@@ -12,8 +12,9 @@ export function csvCell(value: unknown): string {
 }
 
 type Authorize = (request: FastifyRequest) => { id: string }
+type RsvpSubmission = { email: string; event_name: string; business_name: string; deal_id: string }
 
-export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, requireVerified: Authorize, requireSuperadmin: Authorize) {
+export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, requireVerified: Authorize, requireSuperadmin: Authorize, sendRsvpConfirmation?: (submission: RsvpSubmission) => Promise<boolean>) {
   app.post('/api/deals/:id/interest', { config: { rateLimit: { max: 20, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const user = requireVerified(request)
     const params = z.object({ id: z.string().min(1).max(100) }).safeParse(request.params)
@@ -27,18 +28,23 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
     if (!eligible.rows.length) return reply.code(404).send({ error: 'This interest offer is not available.' })
     const inserted = await db.query(
       `INSERT INTO offer_interest_submissions(id,user_id,deal_id,business_id,cta_type,member_id,full_name,email,business_name,event_name)
-       SELECT $1,u.id,d.id,b.id,d.cta_type,c.member_id,concat_ws(' ',u.first_name,u.last_name),COALESCE(u.work_email,u.personal_email),b.name,COALESCE(NULLIF(d.event_name,''),d.title)
+       SELECT $1,u.id,d.id,b.id,d.cta_type,c.member_id,concat_ws(' ',u.first_name,u.last_name),COALESCE(u.offers_email,u.work_email,u.personal_email),b.name,COALESCE(NULLIF(d.event_name,''),d.title)
        FROM users u JOIN member_cards c ON c.user_id=u.id AND c.status='active'
        CROSS JOIN deals d JOIN businesses b ON b.id=d.business_id
        WHERE u.id=$2 AND u.educator_verified_at IS NOT NULL AND d.id=$3 AND d.cta_type<>'use_deal' AND d.published AND b.published
        AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())
-       ON CONFLICT(user_id,deal_id) DO NOTHING RETURNING id,submitted_at`, [randomUUID(), user.id, id],
+       ON CONFLICT(user_id,deal_id) DO NOTHING RETURNING id,submitted_at,cta_type,email,event_name,business_name,deal_id`, [randomUUID(), user.id, id],
     )
     const existing = inserted.rows[0] ?? (await db.query(
       'SELECT id,submitted_at FROM offer_interest_submissions WHERE user_id=$1 AND deal_id=$2', [user.id, id],
     )).rows[0]
     if (!existing) return reply.code(403).send({ error: 'An active verified membership is required to register interest.' })
-    return reply.code(inserted.rows.length ? 201 : 200).send({ submission: existing, alreadySubmitted: !inserted.rows.length })
+    let confirmationEmailSent = false
+    if (inserted.rows.length && existing.cta_type === 'rsvp' && sendRsvpConfirmation) {
+      try { confirmationEmailSent = await sendRsvpConfirmation(existing) }
+      catch (error) { request.log.error({ error, submissionId: existing.id }, 'RSVP confirmation email failed') }
+    }
+    return reply.code(inserted.rows.length ? 201 : 200).send({ submission: { id: existing.id, submitted_at: existing.submitted_at }, alreadySubmitted: !inserted.rows.length, confirmationEmailSent })
   })
 
   app.get('/api/admin/offer-interests', async (request, reply) => {

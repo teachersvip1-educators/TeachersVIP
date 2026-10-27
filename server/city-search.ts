@@ -1,5 +1,6 @@
 import tzLookup from "tz-lookup"
 import type { Config } from "./config.js"
+import { normalizeUsCity } from "../shared/us-city.js"
 
 type MapboxFeature = {
   id?: string
@@ -8,6 +9,7 @@ type MapboxFeature = {
     full_address?: string
     name?: string
     place_formatted?: string
+    context?: { country?: { country_code?: string }; region?: { name?: string }; place?: { name?: string } }
     coordinates?: { latitude?: number, longitude?: number }
   }
   geometry?: { coordinates?: [number, number] }
@@ -20,6 +22,7 @@ type OpenMeteoResult = {
   admin1?: string
   state?: string
   country?: string
+  country_code?: string
   timezone?: string
   latitude?: number
   longitude?: number
@@ -52,12 +55,7 @@ const LOCAL_CITIES: CitySuggestion[] = [
   ["Miami, Florida, United States", "miami-fl", "America/New_York"],
   ["Charlotte, North Carolina, United States", "charlotte-nc", "America/New_York"],
   ["Washington, District of Columbia, United States", "washington-dc", "America/New_York"],
-  ["Toronto, Ontario, Canada", "toronto-on", "America/Toronto"],
-  ["Vancouver, British Columbia, Canada", "vancouver-bc", "America/Vancouver"],
-  ["London, England, United Kingdom", "london-uk", "Europe/London"],
-  ["Johannesburg, Gauteng, South Africa", "johannesburg-za", "Africa/Johannesburg"],
-  ["Cape Town, Western Cape, South Africa", "cape-town-za", "Africa/Johannesburg"],
-].map(([label, id, timezone]) => ({ label, id, timezone, provider: "local" }))
+].map(([label, id, timezone]) => ({ label: normalizeUsCity(label)!, id, timezone, provider: "local" }))
 
 function localCitySuggestions(query: string): CitySuggestion[] {
   const normalized = query.toLocaleLowerCase("en-US")
@@ -94,6 +92,7 @@ async function searchOpenMeteo(
   url.searchParams.set("count", "10")
   url.searchParams.set("language", "en")
   url.searchParams.set("format", "json")
+  url.searchParams.set("countryCode", "US")
   try {
     const response = await fetcher(url, {
       headers: { Accept: "application/json" },
@@ -103,10 +102,9 @@ async function searchOpenMeteo(
     const payload = (await response.json()) as OpenMeteoResponse
     const seen = new Set<string>()
     return (payload.results ?? []).flatMap((result, index) => {
-      if (!result.name) return []
-      const label = [result.name, result.admin1 || result.state, result.country]
-        .filter(Boolean)
-        .join(", ")
+      if (!result.name || (result.country_code?.toUpperCase() !== 'US' && result.country !== 'United States')) return []
+      const label = normalizeUsCity([result.name, result.admin1 || result.state].filter(Boolean).join(', '))
+      if (!label) return []
       const normalized = label.toLocaleLowerCase("en-US")
       if (!label || seen.has(normalized)) return []
       seen.add(normalized)
@@ -127,14 +125,19 @@ async function searchOpenMeteo(
 function normalizeMapboxFeatures(
   features: MapboxFeature[] | undefined,
   key: string,
+  kind: CitySearchKind = 'address',
 ): CitySuggestion[] {
   const seen = new Set<string>()
   return (features ?? []).flatMap((feature, index) => {
     const properties = feature.properties ?? {}
-    const label = (
+    if (properties.context?.country?.country_code && properties.context.country.country_code.toUpperCase() !== 'US') return []
+    const fullLabel = (
       properties.full_address ||
       [properties.name, properties.place_formatted].filter(Boolean).join(", ")
     ).trim()
+    const contextCity = [properties.context?.place?.name || properties.name, properties.context?.region?.name].filter(Boolean).join(', ')
+    const label = kind === 'city' ? normalizeUsCity(contextCity) || normalizeUsCity(fullLabel) : fullLabel
+    if (!label) return []
     const normalized = label.toLocaleLowerCase("en-US")
     if (!label || seen.has(normalized)) return []
     seen.add(normalized)
@@ -191,6 +194,7 @@ export function createCitySearch(
     url.searchParams.set("permanent", "false")
     url.searchParams.set("limit", "10")
     url.searchParams.set("language", "en")
+    url.searchParams.set("country", "us")
     url.searchParams.set("access_token", config.MAPBOX_PUBLIC_TOKEN)
 
     try {
@@ -203,6 +207,7 @@ export function createCitySearch(
       const values = normalizeMapboxFeatures(
         payload.features,
         `${kind}:${query.toLocaleLowerCase("en-US")}`,
+        kind,
       )
       return values.length ? values : fallback
     } catch {
@@ -225,6 +230,7 @@ export async function resolveMapboxSuggestion(
   url.searchParams.set("permanent", "true")
   url.searchParams.set("limit", "1")
   url.searchParams.set("language", "en")
+  url.searchParams.set("country", "us")
   url.searchParams.set("access_token", config.MAPBOX_PUBLIC_TOKEN)
 
   try {

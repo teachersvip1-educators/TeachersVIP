@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, post } from './lib/api'
 import { OFFER_CTA_LABELS, type OfferCtaType } from '../shared/offer-cta'
@@ -16,16 +16,22 @@ function rememberOffer(id: string) {
 
 type InterestOffer = { id: string; business_name: string; title: string; description: string; restrictions: string; image_url: string; event_name?: string | null; cta_type?: OfferCtaType; interest_submitted?: boolean }
 
-export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user: { verified: boolean } | null }) {
+export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user: { verified: boolean; is_demo?: boolean } | null }) {
   const [submitted, setSubmitted] = useState(Boolean(deal.interest_submitted))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => { setSubmitted(Boolean(deal.interest_submitted)); setError('') }, [deal.id, deal.interest_submitted])
+  const [confirmationEmailSent, setConfirmationEmailSent] = useState(false)
+  const confirmationRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { setSubmitted(Boolean(deal.interest_submitted)); setError(''); setConfirmationEmailSent(false) }, [deal.id, deal.interest_submitted])
+  useEffect(() => {
+    if (submitted) confirmationRef.current?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }, [submitted])
   const label = OFFER_CTA_LABELS[deal.cta_type || 'join_waitlist']
   const submit = async () => {
     setBusy(true); setError('')
     try {
-      await post(`/deals/${encodeURIComponent(deal.id)}/interest`, {})
+      const result = await post<{ confirmationEmailSent?: boolean }>(`/deals/${encodeURIComponent(deal.id)}/interest`, {})
+      setConfirmationEmailSent(Boolean(result.confirmationEmailSent))
       setSubmitted(true)
       try { localStorage.removeItem(pendingKey) } catch { /* Optional return destination. */ }
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
@@ -41,17 +47,18 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       <p>{deal.description}</p>
       <div className="restriction"><b>Event and offer details</b><span>{deal.restrictions}</span></div>
       {error && <div className="notice notice-error" role="alert">{error}</div>}
-      {submitted ? <div className="notice notice-success" role="status">
-        <strong>{deal.cta_type === 'rsvp' ? 'Your RSVP is saved.' : deal.cta_type === 'get_launch_invite' ? 'Your launch invite request is saved.' : 'You’re on the waitlist.'}</strong>
-        <p>Your interest has been recorded for {deal.business_name}. You only need to submit once.</p>
-      </div> : user?.verified ? <>
+      {submitted ? <div ref={confirmationRef} className="notice notice-success" role="status">
+        <strong>{deal.cta_type === 'rsvp' ? 'Thank you for RSVPing!' : deal.cta_type === 'get_launch_invite' ? 'Your launch invite request is saved.' : 'You’re on the waitlist.'}</strong>
+        <p>{deal.cta_type === 'rsvp' ? `Your RSVP for ${deal.event_name || deal.title} with ${deal.business_name} is confirmed. We look forward to seeing you!` : `Your interest has been recorded for ${deal.business_name}. You only need to submit once.`}</p>
+        {confirmationEmailSent && <p>A confirmation has also been sent to your preferred email.</p>}
+      </div> : user?.is_demo ? <p>Demo preview: verified educators can RSVP here and receive an immediate thank-you and confirmation.</p> : user?.verified ? <>
         <p id="interest-consent" className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
       </> : <>
         <p>Sign up and verify your educator eligibility before registering interest.</p>
         {!user && <Link className="back-link" to="/sign-in" onClick={() => rememberOffer(deal.id)}>Already a member? Sign In</Link>}
       </>}
       <div className="deal-sticky-action">
-        {submitted ? <span className="action action-gold">Interest saved</span> : user?.verified ?
+        {submitted ? <span className="action action-gold">{deal.cta_type === 'rsvp' ? 'RSVP confirmed' : 'Interest saved'}</span> : user?.is_demo ? <span className="action action-soft">Read-only preview</span> : user?.verified ?
           <button className="action action-gold" aria-describedby="interest-consent" disabled={busy} onClick={() => void submit()}>{busy ? 'Saving your interest…' : label}</button> :
           <Link className="action action-gold" to={user ? '/verify' : '/create-account'} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : `Sign up to ${label}`}</Link>}
       </div>

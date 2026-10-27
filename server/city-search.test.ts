@@ -13,13 +13,14 @@ describe('city search', () => {
     const fetcher = vi.fn(async (url: URL) => {
       expect(url.searchParams.get('autocomplete')).toBe('true')
       expect(url.searchParams.get('permanent')).toBe('false')
+      expect(url.searchParams.get('country')).toBe('us')
       return new Response(JSON.stringify({ features: [
         { id: 'place.1', properties: { name: 'Austin', place_formatted: 'Texas, United States' }, geometry: { coordinates: [-97.7431, 30.2672] } },
         { id: 'place.2', properties: { full_address: 'Austin, Texas, United States' } },
       ] }), { status: 200 })
     }) as unknown as typeof fetch
     const search = createCitySearch(base, fetcher)
-    expect(await search(' austin ')).toEqual([{ id: 'place.1', label: 'Austin, Texas, United States', provider: 'mapbox', latitude: 30.2672, longitude: -97.7431, timezone: 'America/Chicago' }])
+    expect(await search(' austin ')).toEqual([{ id: 'place.1', label: 'Austin, Texas', provider: 'mapbox', latitude: 30.2672, longitude: -97.7431, timezone: 'America/Chicago' }])
     expect(await search('Austin')).toHaveLength(1)
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
@@ -59,16 +60,18 @@ describe('city search', () => {
     expect(await search('Anywhere')).toEqual([])
   })
 
-  it('uses the global no-key geocoder when Mapbox is not configured', async () => {
+  it('restricts no-key geocoding to US cities and displays only city and state', async () => {
     const fetcher = vi.fn(async (url: URL) => {
       expect(url.hostname).toBe('geocoding-api.open-meteo.com')
+      expect(url.searchParams.get('countryCode')).toBe('US')
       return new Response(JSON.stringify({ results: [
         { id: 1, name: 'Cape Town', admin1: 'Western Cape', country: 'South Africa', timezone: 'Africa/Johannesburg', latitude: -33.9249, longitude: 18.4241 },
+        { id: 2, name: 'Houston', admin1: 'Texas', country_code: 'US', timezone: 'America/Chicago', latitude: 29.76, longitude: -95.37 },
       ] }), { status: 200 })
     }) as unknown as typeof fetch
     const search = createCitySearch({ ...base, MAPBOX_PUBLIC_TOKEN: undefined }, fetcher)
-    await expect(search('Cape Town')).resolves.toEqual([
-      { id: '1', label: 'Cape Town, Western Cape, South Africa', provider: 'open-meteo', timezone: 'Africa/Johannesburg', latitude: -33.9249, longitude: 18.4241 },
+    await expect(search('Houston')).resolves.toEqual([
+      { id: '2', label: 'Houston, Texas', provider: 'open-meteo', timezone: 'America/Chicago', latitude: 29.76, longitude: -95.37 },
     ])
   })
 
@@ -77,9 +80,21 @@ describe('city search', () => {
     const search = createCitySearch({ ...base, MAPBOX_PUBLIC_TOKEN: undefined }, fetcher)
     expect(await search('Hou')).toContainEqual({
       id: 'houston-tx',
-      label: 'Houston, Texas, United States',
+      label: 'Houston, Texas',
       provider: 'local',
       timezone: 'America/Chicago',
     })
+  })
+  it('does not expose international cities in the local fallback', async () => {
+    const fetcher = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    const search = createCitySearch({ ...base, MAPBOX_PUBLIC_TOKEN: undefined }, fetcher)
+    expect(await search('Toronto')).toEqual([])
+    expect(await search('London')).toEqual([])
+  })
+  it('rejects international provider results even if a provider ignores the country filter', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ features: [
+      { properties: { name: 'London', place_formatted: 'England, United Kingdom', context: { country: { country_code: 'GB' } } } },
+    ] }))) as unknown as typeof fetch
+    expect(await createCitySearch(base, fetcher)('London')).toEqual([])
   })
 })
