@@ -2872,6 +2872,7 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
 
   const locationRequest = useRef<AbortController | null>(null)
   const activationAttempt = useRef<{ locationId: string; key: string } | null>(null)
+  const activationFeedback = useRef<HTMLElement | null>(null)
   const [locationProgress, setLocationProgress] = useState("")
   const [locationHelp, setLocationHelp] = useState(false)
   const [locating, setLocating] = useState(false)
@@ -2905,6 +2906,12 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
   }, [])
 
   const isOpen = useOpeningStatus(deal)
+
+  useEffect(() => {
+    if (!activation) return
+    const frame = requestAnimationFrame(() => activationFeedback.current?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }))
+    return () => cancelAnimationFrame(frame)
+  }, [activation?.id])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -3231,6 +3238,7 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
           )}
           {activation ? (
             <section
+              ref={activationFeedback}
               className={`report-success activation-success${
                 activation.activationType === "online_offer_access"
                   ? ""
