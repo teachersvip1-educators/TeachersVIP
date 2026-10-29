@@ -30,6 +30,7 @@ import {
 } from "./verification/index.js"
 import { activateDeal } from "./deals/activation.js"
 import { registerOfferInterestRoutes } from "./deals/interests.js"
+import { rsvpConfirmationEmail } from "./emails/rsvp-confirmation.js"
 import { normalizeUsCity } from "../shared/us-city.js"
 import { isValidTimezone, withOpeningStatus } from "../shared/business-hours.js"
 
@@ -130,6 +131,8 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
       title: "Offer title",
       businessId: "Business",
       eventName: "Event name",
+      eventDateTime: "Event date and time",
+      eventLocation: "Event location",
       restrictions: "Restrictions",
       redemptionValue: "Redemption value",
     }
@@ -2025,6 +2028,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           businessId: z.string().trim().min(1).max(80),
           ctaType: z.enum(['use_deal','join_waitlist','rsvp','get_launch_invite']).default('use_deal'),
           eventName: z.string().trim().min(2).max(160).nullable().optional(),
+          eventDateTime: z.string().trim().max(200).nullable().optional(),
+          eventLocation: z.string().trim().max(500).nullable().optional(),
           title: z.string().trim().min(2).max(160),
           description: z.string().trim().min(5).max(1000),
           channel: z.enum(["in_person", "online"]),
@@ -2114,7 +2119,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     try {
       await client.query("BEGIN")
       await client.query(
-        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,image_url,published,starts_at,ends_at,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,cta_type,event_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,image_url,published,starts_at,ends_at,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,cta_type,event_name,event_date_time,event_location) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
         [
           body.id,
           body.businessId,
@@ -2145,6 +2150,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             (body.channel === "online" ? "online" : "standard_geolocation"),
           body.ctaType,
           body.eventName || body.title,
+          body.eventDateTime || null,
+          body.eventLocation || null,
         ],
       )
       if (body.channel === "in_person" && body.ctaType === 'use_deal') {
@@ -2221,6 +2228,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         .object({
           ctaType: z.enum(['use_deal', 'join_waitlist', 'rsvp', 'get_launch_invite']).optional(),
           eventName: z.string().trim().max(160).nullable().optional(),
+          eventDateTime: z.string().trim().max(200).nullable().optional(),
+          eventLocation: z.string().trim().max(500).nullable().optional(),
           category: z.string().trim().min(2).max(60).optional(),
           channel: z.enum(['in_person', 'online']).optional(),
           giveaway: z.boolean().optional(),
@@ -2270,7 +2279,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       request.body,
     )
     const mappings: Record<string, string> = {
-      ctaType: "cta_type", eventName: "event_name", category: "category", channel: "channel",
+      ctaType: "cta_type", eventName: "event_name", eventDateTime: "event_date_time", eventLocation: "event_location", category: "category", channel: "channel",
       giveaway: "giveaway", promoCode: "promo_code_encrypted",
       published: "published",
       featured: "featured",
@@ -2607,7 +2616,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const { id } = parse(z.object({ id: z.string() }), request.params)
     const result = await db.query(
       `SELECT d.id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.starts_at,d.ends_at,d.usage_limit_count,d.usage_limit_period,d.redemption_method AS "redemptionMethod",
-      d.cta_type,d.event_name,EXISTS(SELECT 1 FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2) interest_submitted,
+      d.cta_type,d.event_name,d.event_date_time,d.event_location,EXISTS(SELECT 1 FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2) interest_submitted,
+      (SELECT s.id FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2 AND s.cta_type='rsvp') rsvp_id,
       b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.opening_hours,b.hours_timezone,b.address,b.latitude,b.longitude,
       COALESCE((SELECT json_agg(json_build_object('id',bl.id,'name',bl.location_name,'address',COALESCE(bl.address,b.address),'latitude',bl.latitude,'longitude',bl.longitude,'radiusMeters',bl.geofence_radius_m,'timezone',bl.timezone) ORDER BY bl.location_name,bl.id)
         FROM deal_locations dl JOIN business_locations bl ON bl.id=dl.business_location_id WHERE dl.deal_id=d.id AND bl.active),'[]'::json) locations
@@ -3322,8 +3332,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const { error } = await resend.emails.send({
       from: config.RESEND_FROM_EMAIL,
       to: submission.email,
-      subject: `Thanks for RSVPing to ${submission.event_name}`,
-      text: `Thank you for RSVPing!\n\nYour RSVP for ${submission.event_name} with ${submission.business_name} is confirmed.\n\nYou can view the event details at ${config.APP_URL}/deals/${encodeURIComponent(submission.deal_id)}.\n\nTeachersVIP`,
+      ...rsvpConfirmationEmail(submission, config.APP_URL),
     })
     if (error) throw error
     return true

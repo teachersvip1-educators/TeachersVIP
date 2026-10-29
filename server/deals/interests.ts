@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { DbPool } from '../db/pool.js'
 import { OFFER_CTA_LABELS, type OfferCtaType } from '../../shared/offer-cta.js'
+import type { RsvpConfirmation } from '../emails/rsvp-confirmation.js'
 
 export function csvCell(value: unknown): string {
   const text = String(value ?? '')
@@ -11,8 +12,8 @@ export function csvCell(value: unknown): string {
   return `"${safe.replace(/"/g, '""')}"`
 }
 
-type Authorize = (request: FastifyRequest) => { id: string }
-type RsvpSubmission = { email: string; event_name: string; business_name: string; deal_id: string }
+type Authorize = (request: FastifyRequest) => { id: string; first_name?: string }
+type RsvpSubmission = RsvpConfirmation & { business_name: string; deal_id: string }
 
 export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, requireVerified: Authorize, requireSuperadmin: Authorize, sendRsvpConfirmation?: (submission: RsvpSubmission) => Promise<boolean>) {
   app.post('/api/deals/:id/interest', { config: { rateLimit: { max: 20, timeWindow: '15 minutes' } } }, async (request, reply) => {
@@ -21,7 +22,7 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
     if (!params.success) return reply.code(400).send({ error: 'Invalid offer ID.' })
     const id = params.data.id
     const eligible = await db.query(
-      `SELECT d.id FROM deals d JOIN businesses b ON b.id=d.business_id
+      `SELECT d.id,d.event_date_time,d.event_location FROM deals d JOIN businesses b ON b.id=d.business_id
        WHERE d.id=$1 AND d.cta_type<>'use_deal' AND d.published AND b.published
        AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())`, [id],
     )
@@ -41,10 +42,28 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
     if (!existing) return reply.code(403).send({ error: 'An active verified membership is required to register interest.' })
     let confirmationEmailSent = false
     if (inserted.rows.length && existing.cta_type === 'rsvp' && sendRsvpConfirmation) {
-      try { confirmationEmailSent = await sendRsvpConfirmation(existing) }
+      try { confirmationEmailSent = await sendRsvpConfirmation({ ...existing, first_name: user.first_name || 'there', event_date_time: eligible.rows[0].event_date_time ?? null, event_location: eligible.rows[0].event_location ?? null }) }
       catch (error) { request.log.error({ error, submissionId: existing.id }, 'RSVP confirmation email failed') }
     }
     return reply.code(inserted.rows.length ? 201 : 200).send({ submission: { id: existing.id, submitted_at: existing.submitted_at }, alreadySubmitted: !inserted.rows.length, confirmationEmailSent })
+  })
+
+  app.get('/api/me/rsvps/:id', async (request, reply) => {
+    const user = requireVerified(request)
+    const params = z.object({ id: z.uuid() }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'Invalid RSVP link.' })
+    const result = await db.query(`SELECT s.id,s.deal_id,s.event_name,s.business_name,d.event_date_time,d.event_location
+      FROM offer_interest_submissions s JOIN deals d ON d.id=s.deal_id
+      WHERE s.id=$1 AND s.user_id=$2 AND s.cta_type='rsvp'`, [params.data.id, user.id])
+    if (!result.rows[0]) return reply.code(404).send({ error: 'No active RSVP was found for this account. It may already have been cancelled.' })
+    return reply.header('Cache-Control', 'no-store').send({ rsvp: result.rows[0] })
+  })
+  app.delete('/api/me/rsvps/:id', async (request, reply) => {
+    const user = requireVerified(request)
+    const params = z.object({ id: z.uuid() }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'Invalid RSVP link.' })
+    await db.query("DELETE FROM offer_interest_submissions WHERE id=$1 AND user_id=$2 AND cta_type='rsvp'", [params.data.id, user.id])
+    return reply.header('Cache-Control', 'no-store').send({ ok: true })
   })
 
   app.get('/api/admin/offer-interests', async (request, reply) => {

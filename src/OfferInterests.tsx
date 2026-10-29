@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, post } from './lib/api'
+import { Link, useParams } from 'react-router-dom'
+import { api, post, del } from './lib/api'
 import { OFFER_CTA_LABELS, type OfferCtaType } from '../shared/offer-cta'
 
 const pendingKey = 'teachersvip:pending-interest-offer'
@@ -14,15 +14,16 @@ function rememberOffer(id: string) {
   try { localStorage.setItem(pendingKey, `/deals/${id}`) } catch { /* Signup remains available. */ }
 }
 
-type InterestOffer = { id: string; business_name: string; title: string; description: string; restrictions: string; image_url: string; event_name?: string | null; cta_type?: OfferCtaType; interest_submitted?: boolean }
+type InterestOffer = { id: string; business_name: string; title: string; description: string; restrictions: string; image_url: string; event_name?: string | null; event_date_time?: string | null; event_location?: string | null; rsvp_id?: string | null; cta_type?: OfferCtaType; interest_submitted?: boolean }
 
 export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user: { verified: boolean; is_demo?: boolean } | null }) {
   const [submitted, setSubmitted] = useState(Boolean(deal.interest_submitted))
+  const [rsvpId, setRsvpId] = useState(deal.rsvp_id)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false)
   const confirmationRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { setSubmitted(Boolean(deal.interest_submitted)); setError(''); setConfirmationEmailSent(false) }, [deal.id, deal.interest_submitted])
+  useEffect(() => { setSubmitted(Boolean(deal.interest_submitted)); setRsvpId(deal.rsvp_id); setError(''); setConfirmationEmailSent(false) }, [deal.id, deal.interest_submitted, deal.rsvp_id])
   useEffect(() => {
     if (submitted) confirmationRef.current?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   }, [submitted])
@@ -30,7 +31,8 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
   const submit = async () => {
     setBusy(true); setError('')
     try {
-      const result = await post<{ confirmationEmailSent?: boolean }>(`/deals/${encodeURIComponent(deal.id)}/interest`, {})
+      const result = await post<{ confirmationEmailSent?: boolean; submission: { id: string } }>(`/deals/${encodeURIComponent(deal.id)}/interest`, {})
+      setRsvpId(result.submission.id)
       setConfirmationEmailSent(Boolean(result.confirmationEmailSent))
       setSubmitted(true)
       try { localStorage.removeItem(pendingKey) } catch { /* Optional return destination. */ }
@@ -46,11 +48,13 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       <h2>{deal.event_name || deal.title}</h2>
       <p>{deal.description}</p>
       <div className="restriction"><b>Event and offer details</b><span>{deal.restrictions}</span></div>
+      {deal.cta_type === 'rsvp' && <p><strong>Date and time:</strong> {deal.event_date_time || 'To be announced'}<br /><strong>Location:</strong> {deal.event_location || 'To be announced'}</p>}
       {error && <div className="notice notice-error" role="alert">{error}</div>}
       {submitted ? <div ref={confirmationRef} className="notice notice-success" role="status">
         <strong>{deal.cta_type === 'rsvp' ? 'Thank you for RSVPing!' : deal.cta_type === 'get_launch_invite' ? 'Your launch invite request is saved.' : 'You’re on the waitlist.'}</strong>
         <p>{deal.cta_type === 'rsvp' ? `Your RSVP for ${deal.event_name || deal.title} with ${deal.business_name} is confirmed. We look forward to seeing you!` : `Your interest has been recorded for ${deal.business_name}. You only need to submit once.`}</p>
         {confirmationEmailSent && <p>A confirmation has also been sent to your preferred email.</p>}
+        {deal.cta_type === 'rsvp' && rsvpId && <Link className="back-link" to={`/rsvp/${rsvpId}`}>Manage your RSVP</Link>}
       </div> : user?.is_demo ? <p>Demo preview: verified educators can RSVP here and receive an immediate thank-you and confirmation.</p> : user?.verified ? <>
         <p id="interest-consent" className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
       </> : <>
@@ -63,6 +67,42 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
           <Link className="action action-gold" to={user ? '/verify' : '/create-account'} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : `Sign up to ${label}`}</Link>}
       </div>
     </div>
+  </section>
+}
+
+type ManagedRsvp = { id: string; deal_id: string; event_name: string; business_name: string; event_date_time: string | null; event_location: string | null }
+export function ManageRsvp({ user }: { user: { verified: boolean; is_demo?: boolean } | null }) {
+  const { id } = useParams()
+  const [rsvp, setRsvp] = useState<ManagedRsvp | null>(null)
+  const [error, setError] = useState('')
+  const [cancelled, setCancelled] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    setRsvp(null); setError(''); setCancelled(false); setConfirming(false)
+    if (!user?.verified || user.is_demo) return
+    const controller = new AbortController()
+    api<{ rsvp: ManagedRsvp }>(`/me/rsvps/${encodeURIComponent(id || '')}`, { signal: controller.signal }).then(result => setRsvp(result.rsvp)).catch(error => { if (!controller.signal.aborted) setError(error.message) })
+    return () => controller.abort()
+  }, [id, user?.verified, user?.is_demo])
+  if (!user) return <><p>Sign in to the account you used to RSVP.</p><Link className="action action-gold" to={`/sign-in?returnTo=${encodeURIComponent(`/rsvp/${id}`)}`}>Sign in to manage your RSVP</Link></>
+  if (!user.verified || user.is_demo) return <p>A verified educator account is required to manage an RSVP.</p>
+  if (error) return <div className="notice notice-error" role="alert">{error}</div>
+  if (!rsvp) return <p>Loading your RSVP…</p>
+  const cancel = async () => {
+    setBusy(true)
+    try { await del(`/me/rsvps/${encodeURIComponent(rsvp.id)}`); setCancelled(true); setConfirming(false) }
+    catch (error) { setError((error as Error).message) }
+    finally { setBusy(false) }
+  }
+  return <section className="form-grid">
+    <h2>{rsvp.event_name}</h2>
+    <p><strong>Date and time:</strong> {rsvp.event_date_time || 'To be announced'}<br /><strong>Location:</strong> {rsvp.event_location || 'To be announced'}</p>
+    {cancelled ? <div className="notice notice-success" role="status">Your RSVP has been cancelled.</div> : <>
+      <p>Your RSVP is confirmed. If your plans have changed, you can cancel it below.</p>
+      {confirming ? <><p>Cancel your RSVP for this event?</p><button className="action action-danger" disabled={busy} onClick={() => void cancel()}>{busy ? 'Cancelling…' : 'Confirm cancellation'}</button><button className="action action-soft" disabled={busy} onClick={() => setConfirming(false)}>Keep my RSVP</button></> : <button className="action action-soft" onClick={() => setConfirming(true)}>Cancel RSVP</button>}
+    </>}
+    <Link className="back-link" to={`/deals/${rsvp.deal_id}`}>View event</Link>
   </section>
 }
 

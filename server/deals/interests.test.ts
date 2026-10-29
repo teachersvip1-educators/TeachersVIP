@@ -11,7 +11,7 @@ function setup(role: 'anonymous' | 'unverified' | 'member' | 'admin' = 'member',
   const authorize = (admin = false) => () => {
     if (role === 'anonymous') throw Object.assign(new Error('Authentication required'), { statusCode: 401 })
     if (role === 'unverified' || admin && role !== 'admin') throw Object.assign(new Error('Access required'), { statusCode: 403 })
-    return { id: 'member-user-id' }
+    return { id: 'member-user-id', first_name: 'Avery' }
   }
   registerOfferInterestRoutes(app, { query } as unknown as DbPool, authorize(), authorize(true), sendRsvpConfirmation)
   return { app, query }
@@ -22,11 +22,11 @@ describe('offer interest authorization and repeat submissions', () => {
   it('sends a thank-you to the selected email only on the first RSVP', async () => {
     const send = vi.fn().mockResolvedValue(true)
     const { app, query } = setup('member', send)
-    query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [rsvp] })
+    query.mockResolvedValueOnce({ rows: [{ id: 'event', event_date_time: 'November 14 at 6 PM CT', event_location: 'Main Hall' }] }).mockResolvedValueOnce({ rows: [rsvp] })
     const first = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
     expect(first.statusCode).toBe(201)
     expect(first.json().confirmationEmailSent).toBe(true)
-    expect(send).toHaveBeenCalledWith(rsvp)
+    expect(send).toHaveBeenCalledWith({ ...rsvp, first_name: 'Avery', event_date_time: 'November 14 at 6 PM CT', event_location: 'Main Hall' })
     expect(query.mock.calls[1][0]).toContain('COALESCE(u.offers_email,u.work_email,u.personal_email)')
     query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [rsvp] })
     const repeat = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
@@ -126,5 +126,36 @@ describe('offer interest authorization and repeat submissions', () => {
 describe('CSV quoting', () => {
   it.each([['a,"b"', '"a,""b"""'], ['  +command', '"\'  +command"'], ['@command', '"\'@command"'], ['line\nnext', '"line\nnext"']])('safely exports %s', (value, expected) => {
     expect(csvCell(value)).toBe(expected)
+  })
+})
+
+describe('manage RSVP ownership', () => {
+  const id = 'ec27c73f-46f1-4d60-bdb9-a01d045899cd'
+  it.each(['anonymous', 'unverified'] as const)('protects read and cancel from %s users', async role => {
+    const { app, query } = setup(role)
+    for (const method of ['GET', 'DELETE'] as const) expect((await app.inject({ method, url: `/api/me/rsvps/${id}` })).statusCode).toBe(role === 'anonymous' ? 401 : 403)
+    expect(query).not.toHaveBeenCalled()
+  })
+  it('only reads the signed-in member’s RSVP, including unpublished event details', async () => {
+    const { app, query } = setup()
+    query.mockResolvedValueOnce({ rows: [{ id, event_name: 'Educator evening', event_date_time: 'November 14 at 6 PM CT', event_location: 'Main Hall' }] })
+    const response = await app.inject({ method: 'GET', url: `/api/me/rsvps/${id}` })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(query.mock.calls[0][1]).toEqual([id, 'member-user-id'])
+    expect(query.mock.calls[0][0]).toContain('s.user_id=$2')
+    expect(query.mock.calls[0][0]).not.toContain('published')
+  })
+  it('does not expose an RSVP belonging to another member', async () => {
+    const { app, query } = setup()
+    query.mockResolvedValueOnce({ rows: [] })
+    expect((await app.inject({ method: 'GET', url: `/api/me/rsvps/${id}` })).statusCode).toBe(404)
+  })
+  it('cancels only the signed-in member’s RSVP and leaves other interest types alone', async () => {
+    const { app, query } = setup()
+    query.mockResolvedValue({ rows: [] })
+    expect((await app.inject({ method: 'DELETE', url: `/api/me/rsvps/${id}` })).statusCode).toBe(200)
+    expect(query.mock.calls[0][1]).toEqual([id, 'member-user-id'])
+    expect(query.mock.calls[0][0]).toContain("user_id=$2 AND cta_type='rsvp'")
   })
 })

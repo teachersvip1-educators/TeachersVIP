@@ -74,6 +74,7 @@ import {
 import {
   AdminOfferInterests,
   OfferInterestDetail,
+  ManageRsvp,
   pendingOfferDestination,
 } from "./OfferInterests"
 
@@ -1705,7 +1706,13 @@ function AdminRegister({ refresh }: { refresh: RefreshSession }) {
   )
 }
 
+function rsvpReturnDestination(search: string) {
+  const path = new URLSearchParams(search).get('returnTo')
+  return path && /^\/rsvp\/[a-f0-9-]{36}$/i.test(path) ? path : null
+}
+
 function SignIn({ refresh }: { refresh: RefreshSession }) {
+  const returnTo = rsvpReturnDestination(useLocation().search)
   const navigate = useNavigate(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
@@ -1726,7 +1733,7 @@ function SignIn({ refresh }: { refresh: RefreshSession }) {
 
       const nextUser = await refresh()
 
-      navigate(nextUser?.is_demo ? '/deals' : nextUser?.verified ? pendingOfferDestination() : "/verify")
+      navigate(nextUser?.is_demo ? '/deals' : nextUser?.verified ? (returnTo || pendingOfferDestination()) : "/verify")
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -4818,6 +4825,8 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
         ctaType,
 
         eventName: d.get("eventName") || null,
+        eventDateTime: d.get('eventDateTime') || null,
+        eventLocation: d.get('eventLocation') || null,
 
         id: d.get("id"),
 
@@ -5204,6 +5213,8 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
                   required
                   minLength={2}
                 />
+                <Field label="Event date and time (include time zone)" name="eventDateTime" maxLength={200} placeholder="e.g. November 14, 2026 at 6:00 PM CT" />
+                <Field label="Event location" name="eventLocation" maxLength={500} placeholder="Venue and full address, or online meeting details" />
                 <Notice>
                   Educators must sign up and verify first. These submissions are
                   saved to Interested educators without a location check or deal
@@ -7183,6 +7194,7 @@ function AppRoutes() {
   return user ? (
     <Shell user={user} onSignOut={signOut}>
       <Routes>
+        <Route path="/sign-in" element={<Navigate to={user.is_demo ? '/deals' : rsvpReturnDestination(routeLocation.search) || pendingOfferDestination()} replace />} />
         <Route
           path="/verify"
           element={<Verify user={user} refresh={refresh} />}
@@ -7193,6 +7205,7 @@ function AppRoutes() {
           element={<ActivationDealDetail user={user} />}
         />
         <Route path="/saved" element={<Saved />} />
+        <Route path="/rsvp/:id" element={<Page title="Manage your RSVP"><ManageRsvp user={user} /></Page>} />
         <Route
           path="/vip-card"
           element={user.is_demo ? <Page title="VIP Card"><Notice>Demo preview does not issue an educator VIP card. Verified educators can access their card here.</Notice></Page> : <ActivationVipCardPage user={user} />}
@@ -7261,6 +7274,7 @@ function AppRoutes() {
         element={<AdminRegister refresh={refresh} />}
       />
       <Route path="/sign-in" element={<SignIn refresh={refresh} />} />
+      <Route path="/rsvp/:id" element={<div className="public-site"><PublicHeader /><Page title="Manage your RSVP"><ManageRsvp user={null} /></Page><SiteFooter /></div>} />
       <Route
         path="/deals/:id"
         element={

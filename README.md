@@ -29,6 +29,8 @@ City suggestions and member city fields use **City and State** for the United St
 
 A successful RSVP shows **Thank you for RSVPing!** with the event name. The first RSVP also sends a confirmation through configured Resend delivery. Duplicate submissions do not send another email. Email failure preserves the RSVP and on-screen confirmation; the UI only reports an email sent when the provider accepts it.
 
+RSVP emails use the supplied TeachersVIP welcome template, personalized with the member’s first name. Set **Event date and time (include time zone)** and **Event location** when creating or editing an event; these are separate from offer availability dates. Missing event details display **To be announced**. The email’s **Manage RSVP** link requires sign-in to the account that submitted the RSVP and supports cancellation, including when the offer has since been unpublished. These confirmations apply to RSVP actions; waitlists and launch-invite requests retain their separate behavior.
+
 Migration `022_member_preferences_and_preview.sql` hides the nine seeded sample businesses and their offers without deleting history. Subsequent seed runs keep them unpublished. The public homepage displays published offers instead of hardcoded sample artwork.
 
 The migration also provisions one shared demo preview login:

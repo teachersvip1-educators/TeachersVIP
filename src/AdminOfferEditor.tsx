@@ -8,6 +8,7 @@ import { OFFER_CTA_LABELS, type OfferCtaType } from "../shared/offer-cta"
 type Offer = {
   id: string; title: string; description: string; restrictions: string; category: string;
   cta_type: OfferCtaType; event_name: string | null; channel: string; image_url: string | null;
+  event_date_time: string | null; event_location: string | null;
   starts_at: string | null; ends_at: string | null; redemption_method: string | null;
   redemptionValue: string; promoCode: string; display_ttl_seconds: number | null;
   usage_limit_count: number | null; usage_limit_period: string; usage_limit_scope: string;
@@ -48,6 +49,7 @@ export function AdminOfferEditor({ id, businessId, locations }: { id: string; bu
       await api(`/admin/deals/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({
         title: text("title"), description: text("description"), category: text("category"),
         restrictions: text("restrictions"), ctaType: cta, eventName: text("eventName") || null,
+        eventDateTime: text('eventDateTime') || null, eventLocation: text('eventLocation') || null,
         channel, imageUrl: text("imageUrl") || null, startsAt: date("startsAt"), endsAt: date("endsAt"),
         locationIds: data.getAll("locationIds"),
         ...(useDeal ? { redemptionMethod: text("redemptionMethod"), redemptionValue: text("redemptionValue") || null,
@@ -72,6 +74,11 @@ export function AdminOfferEditor({ id, businessId, locations }: { id: string; bu
     {field("Offer title", "title", offer.title, "text", true)}
     <label className="field"><span>CTA type</span><select value={cta} onChange={e => setCta(e.target.value as OfferCtaType)}>{Object.entries(OFFER_CTA_LABELS).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>
     {field("Event name", "eventName", offer.event_name, "text", cta !== "use_deal")}
+    {cta !== 'use_deal' && <>
+      {field('Event date and time (include time zone)', 'eventDateTime', offer.event_date_time)}
+      {field('Event location', 'eventLocation', offer.event_location)}
+      <p className="field-note">Use the event’s local time and time zone. Blank details appear as “To be announced” in RSVP confirmations.</p>
+    </>}
     <label className="field"><span>Deal description</span><textarea name="description" defaultValue={offer.description} required minLength={5} maxLength={1000} /></label>
     <label className="field"><span>Channel</span><select value={channel} onChange={e => setChannel(e.target.value)}><option value="in_person">In person</option><option value="online">Online</option></select></label>
     <CategorySelect defaultValue={offer.category} />
