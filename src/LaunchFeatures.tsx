@@ -149,7 +149,7 @@ export function CityAlert({ city, email }: { city: string; email: string }) {
       <p>Get an email when a new in-person offer is published in your city.</p>
       <form className="launch-inline-form" onSubmit={save}>
         <label>
-          City and State
+          City and state
           <input
             required
             minLength={2}
@@ -213,7 +213,7 @@ export function SuggestBusiness({ city }: { city: string }) {
                 />
               </label>
               <label>
-                City and State
+                City and state
                 <input
                   name="city"
                   defaultValue={city}

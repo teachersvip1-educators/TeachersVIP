@@ -102,7 +102,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
       workEmail: "Email address",
       offersEmail: "Personal email for offers",
       mobile: "Mobile number",
-      city: "City and State",
+      city: "City and state",
       password: "Password",
       businessName: "Business name",
       businessEmail: "Business email",

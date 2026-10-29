@@ -25,7 +25,7 @@ Imported domains begin in manual review. An administrator must record staff-only
 
 Members can send offers and RSVP confirmations to a personal email during signup or under **Profile → Edit Account Information**. The school email remains the login and verification email. Turning the personal-email option off returns delivery to work email. City alerts resolve the current preference when sending; interest lists capture it at submission time. Existing email-update and city-alert opt-ins still apply.
 
-City suggestions and member city fields use **City and State** for the United States, for example `Houston, Texas`. Participating business locations still use full street addresses.
+City suggestions and member city fields use **City and state** for the United States, for example `Houston, Texas`. Participating business locations still use full street addresses.
 
 A successful RSVP shows **Thank you for RSVPing!** with the event name. The first RSVP also sends a confirmation through configured Resend delivery. Duplicate submissions do not send another email. Email failure preserves the RSVP and on-screen confirmation; the UI only reports an email sent when the provider accepts it.
 

@@ -1207,7 +1207,7 @@ function CityAutocomplete({
 
   kind = "city",
 
-  label = "City and State",
+  label = "City and state",
 
   placeholder = "e.g. Houston, Texas",
 
@@ -1558,9 +1558,8 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           required
         />
         <p className="notice">
-          Membership is for K-12 educators and college professors. Confirming your
-          email is the first step; educator eligibility must also be approved
-          before you can RSVP or access offers.
+          Verify your email to create your account. We’ll separately confirm your
+          educator eligibility before you can RSVP or access offers.
         </p>
         <PersonalOffersEmail />
         <label className="field">
@@ -1576,7 +1575,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
         <label className="check">
           <input name="roleAttestation" type="checkbox" required />
           <span>
-            I confirm that I currently work as the selected educator role.
+            I confirm that I currently work in the educator role selected above.
           </span>
         </label>
         <Field label="Mobile number (optional)" name="mobile" type="tel" />
