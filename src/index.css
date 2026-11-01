@@ -306,6 +306,16 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .verification-review-row { align-items: start; }
 .admin-review-notes { min-width: min(320px, 100%); }
 .admin-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.verification-review-row { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.verification-review-row > .admin-review-notes, .verification-review-row > .admin-review-actions { grid-column: 1 / -1; min-width: 0; }
+.verification-review-row .admin-review-notes textarea { width: 100%; }
+.verification-review-row > .admin-review-actions { display: flex; }
+@media (max-width: 460px) {
+  .verification-review-row { grid-template-columns: minmax(0, 1fr); }
+  .verification-review-row > div:first-child, .verification-review-row > .admin-status, .verification-review-row > .admin-review-notes, .verification-review-row > .admin-review-actions { grid-column: 1; grid-row: auto; }
+  .verification-review-row > .admin-status { justify-self: start; }
+  .verification-review-row .admin-review-actions .action { grid-column: auto; grid-row: auto; }
+}
 .business-application-review { overflow: hidden; border: 1px solid #d9e0ea; border-radius: 14px; background: #fff; }
 .application-summary { width: 100%; display: flex; justify-content: space-between; gap: 18px; padding: 16px; border: 0; color: #0f172a; background: transparent; text-align: left; cursor: pointer; }
 .application-summary span { display: grid; gap: 4px; }
