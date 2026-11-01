@@ -268,6 +268,10 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       })
     return user
   }
+  const blockManualReview = (request: FastifyRequest) => {
+    if (request.currentUser?.verification_status === 'manual_review' && !request.currentUser.educator_verified_at)
+      throw Object.assign(new Error('Educator verification is pending manual review.'), { statusCode: 403 })
+  }
   const configuredSuperadmins = config.SUPERADMIN_EMAILS.split(",")
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)
@@ -2580,6 +2584,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   )
 
   app.get("/api/deals", async (request) => {
+    blockManualReview(request)
     const query = parse(
       z.object({
         q: z.string().optional(),
@@ -2613,6 +2618,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   })
 
   app.get("/api/deals/:id", async (request, reply) => {
+    blockManualReview(request)
     const { id } = parse(z.object({ id: z.string() }), request.params)
     const result = await db.query(
       `SELECT d.id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.starts_at,d.ends_at,d.usage_limit_count,d.usage_limit_period,d.redemption_method AS "redemptionMethod",
@@ -2737,6 +2743,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   )
 
   app.post("/api/deals/:id/save", async (request) => {
+    blockManualReview(request)
     const user = requireUser(request)
     const { id } = parse(z.object({ id: z.string() }), request.params)
     await db.query(
@@ -2746,6 +2753,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return { saved: true }
   })
   app.delete("/api/deals/:id/save", async (request) => {
+    blockManualReview(request)
     const user = requireUser(request)
     const { id } = parse(z.object({ id: z.string() }), request.params)
     await db.query("DELETE FROM saved_deals WHERE user_id=$1 AND deal_id=$2", [
@@ -2833,6 +2841,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     "/api/creator-network",
     { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } },
     async (request, reply) => {
+      blockManualReview(request)
       const body = parse(
         z.object({
           fullName: z.string().trim().min(2).max(140),

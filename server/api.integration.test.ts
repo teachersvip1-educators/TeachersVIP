@@ -57,6 +57,10 @@ suite('TeachersVIP educator verification and activation API', () => {
     expect(confirmed.json()).toMatchObject({ status: 'manual_review' })
     const card = await app.inject({ method: 'GET', url: '/api/me/vip-card', headers: { cookie } })
     expect(card.statusCode).toBe(403)
+    const offers = await app.inject({ method: 'GET', url: '/api/deals', headers: { cookie } })
+    expect(offers.statusCode).toBe(403)
+    const save = await app.inject({ method: 'POST', url: `/api/deals/${dealId}/save`, headers: { cookie } })
+    expect(save.statusCode).toBe(403)
   })
 
   it('automatically approves only a reviewed staff-only role match and uses controlled online activation', async () => {

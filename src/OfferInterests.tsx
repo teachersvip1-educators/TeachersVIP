@@ -27,7 +27,8 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
   useEffect(() => {
     if (submitted) confirmationRef.current?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   }, [submitted])
-  const label = OFFER_CTA_LABELS[deal.cta_type || 'join_waitlist']
+  const isBattersOpening = deal.id === 'batters-brunch-grand-opening'
+  const label = isBattersOpening ? 'Receive Your Invitation' : OFFER_CTA_LABELS[deal.cta_type || 'join_waitlist']
   const submit = async () => {
     setBusy(true); setError('')
     try {
@@ -47,7 +48,7 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       <div className="tags"><span>{label}</span></div>
       <h2>{deal.event_name || deal.title}</h2>
       <p>{deal.description}</p>
-      <div className="restriction"><b>Event and offer details</b><span>{deal.restrictions}</span></div>
+      <div className="restriction"><b>{isBattersOpening ? 'Educator Soft Opening' : 'Event and offer details'}</b><span>{deal.restrictions}</span></div>
       {deal.cta_type === 'rsvp' && <p><strong>Date and time:</strong> {deal.event_date_time || 'To be announced'}<br /><strong>Location:</strong> {deal.event_location || 'To be announced'}</p>}
       {error && <div className="notice notice-error" role="alert">{error}</div>}
       {submitted ? <div ref={confirmationRef} className="notice notice-success" role="status">
@@ -58,7 +59,7 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       </div> : user?.is_demo ? <p>Demo preview: verified educators can RSVP here and receive an immediate thank-you and confirmation.</p> : user?.verified ? <>
         <p id="interest-consent" className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
       </> : <>
-        <p>Sign up and verify your educator eligibility before registering interest.</p>
+        <p>{isBattersOpening ? 'Sign up and verify your educator eligibility to receive the invite.' : 'Sign up and verify your educator eligibility before registering interest.'}</p>
         {!user && <Link className="back-link" to="/sign-in" onClick={() => rememberOffer(deal.id)}>Already a member? Sign In</Link>}
       </>}
       <div className="deal-sticky-action">

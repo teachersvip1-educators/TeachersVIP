@@ -1914,10 +1914,12 @@ function Verify({
 
         if (result.status === "verified" && nextUser?.verified) {
           navigate("/youre-on-the-list", { replace: true })
-        } else
+        } else {
           setMessage(
-            "Your email is confirmed. Your educator eligibility is now in manual review; we’ll notify you when a decision is made.",
+            "Your email is confirmed. Your educator eligibility is now in manual review.",
           )
+          navigate("/verify", { replace: true })
+        }
       })
 
       .catch((e) => setError(e.message))
@@ -1946,7 +1948,7 @@ function Verify({
   }
 
   return (
-    <Page title="Verify Your Email Address" narrow>
+    <Page title={user.verification_status === "manual_review" ? "Educator Verification Pending" : "Verify Your Email Address"} narrow>
       <div className="verify-panel">
         <div className="shield large">✓</div>
         <p>
@@ -1955,7 +1957,8 @@ function Verify({
               Your email ownership is confirmed for{" "}
               <strong>{user.work_email || user.personal_email}</strong>. Your
               educator eligibility is in manual review. You can RSVP and access
-              educator offers once your eligibility is approved.
+              educator offers once your eligibility is approved. Check your
+              status here while you wait.
             </>
           ) : user.verification_status === "rejected" ? (
             <>
@@ -1976,7 +1979,7 @@ function Verify({
         </p>
         {message && <Notice kind="success">{message}</Notice>}
         {error && <Notice kind="error">{error}</Notice>}
-        {user.verification_status !== "rejected" && (
+        {user.verification_status !== "rejected" && user.verification_status !== "manual_review" && (
           <form className="form-grid" onSubmit={send}>
             <Button type="submit">Resend Verification Link</Button>
             {devUrl && (
@@ -1986,6 +1989,9 @@ function Verify({
             )}
           </form>
         )}
+        {user.verification_status === "manual_review" && <div className="form-grid">
+          <Button onClick={() => void refresh().then((nextUser) => { if (nextUser?.verified) navigate('/youre-on-the-list', { replace: true }) })}>Check verification status</Button>
+        </div>}
         <small>
           Your email address is used to confirm ownership. Only K-12 educators
           and college professors are eligible for educator benefits.
@@ -2078,11 +2084,7 @@ function PublicVerify() {
       token,
     })
 
-      .then((result) =>
-        window.location.replace(
-          result.status === "verified" ? "/youre-on-the-list" : "/verify",
-        ),
-      )
+      .then(() => window.location.replace("/sign-in"))
 
       .catch((e) => setError(e.message))
   }, [token])
@@ -7167,17 +7169,17 @@ function AppRoutes() {
     !user.is_superadmin &&
     !user.is_demo &&
     !user.verified &&
-    !routeLocation.pathname.startsWith("/deals/") &&
+    !(user.verification_status !== "manual_review" && routeLocation.pathname.startsWith("/deals/")) &&
     ![
       "/verify",
-      "/creator-network",
       "/about",
       "/contact",
       "/support",
       "/privacy",
       "/terms",
       "/unsubscribe",
-    ].includes(routeLocation.pathname)
+    ].includes(routeLocation.pathname) &&
+    !(user.verification_status !== "manual_review" && routeLocation.pathname === "/creator-network")
   )
     return <Navigate to="/verify" replace />
 
