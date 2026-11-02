@@ -98,6 +98,7 @@ describe('offer interest authorization and repeat submissions', () => {
   it.each([
     ['dealId=batters-brunch-grand-opening&scope=events', ['batters-brunch-grand-opening', null, null]],
     ['dealId=batters-brunch-grand-opening&scope=events&ctaType=rsvp', ['batters-brunch-grand-opening', null, 'rsvp']],
+    ['dealId=batters-brunch-grand-opening&scope=events&ctaType=join_waitlist', ['batters-brunch-grand-opening', null, 'join_waitlist']],
     ['businessId=batters-and-brunch&scope=events&ctaType=get_launch_invite', [null, 'batters-and-brunch', 'get_launch_invite']],
     ['dealId=event-a', ['event-a', null, null]],
     ['dealId=event-b', ['event-b', null, null]],
@@ -164,40 +165,52 @@ describe('manage RSVP ownership', () => {
 })
 
 describe('dedicated event response scope', () => {
-  it('uses event-only predicates for rows, totals, offer counts and CSV', async () => {
+  it('includes historical waitlists in rows, totals, offer counts and CSV', async () => {
     const { app, query } = setup('admin')
     query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ submissions: 0, educators: 0 }] }).mockResolvedValueOnce({ rows: [] })
     const response = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events&dealId=batters-brunch-grand-opening&ctaType=rsvp' })
     expect(response.json()).toMatchObject({ submissions: [], totals: { submissions: 0, educators: 0 } })
     for (const sql of [query.mock.calls[0][0], query.mock.calls[1][0]]) {
-      expect(sql).toContain("cta_type IN ('rsvp','get_launch_invite')")
+      expect(sql).toContain("cta_type IN ('rsvp','get_launch_invite','join_waitlist')")
       expect(sql).not.toContain('FROM users')
     }
     const offerSql = query.mock.calls[2][0]
-    expect(offerSql).toContain("s.cta_type IN ('rsvp','get_launch_invite')")
+    expect(offerSql).toContain("s.cta_type IN ('rsvp','get_launch_invite','join_waitlist')")
     // An invitation event must remain selectable even with no confirmed RSVPs.
-    expect(offerSql).toContain("d.cta_type IN ('rsvp','get_launch_invite') OR s.id IS NOT NULL")
+    expect(offerSql).toContain("d.cta_type IN ('rsvp','get_launch_invite','join_waitlist') OR s.id IS NOT NULL")
     expect(offerSql).not.toContain('d.published')
     query.mockResolvedValueOnce({ rows: [] })
     const csv = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events&dealId=batters-brunch-grand-opening&ctaType=rsvp&export=csv' })
     expect(csv.body.trim().split('\r\n')).toHaveLength(1)
-    expect(query.mock.calls[3][0]).toContain("cta_type IN ('rsvp','get_launch_invite')")
+    expect(query.mock.calls[3][0]).toContain("cta_type IN ('rsvp','get_launch_invite','join_waitlist')")
     expect(query.mock.calls[3][1]).toEqual(query.mock.calls[1][1])
   })
   it('labels invitation requests separately from confirmed RSVPs in event exports', async () => {
     const { app, query } = setup('admin')
     const base = { member_id: 'VIP-123', full_name: 'Educator', email: 'educator@example.test', business_name: 'Batters & Brunch', event_name: 'Grand Opening', submitted_at: '2026-11-02T00:00:00Z' }
-    query.mockResolvedValueOnce({ rows: [{ ...base, cta_type: 'get_launch_invite' }, { ...base, cta_type: 'rsvp' }] })
+    query.mockResolvedValueOnce({ rows: [{ ...base, cta_type: 'get_launch_invite' }, { ...base, cta_type: 'rsvp' }, { ...base, cta_type: 'join_waitlist' }] })
     const response = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events&export=csv' })
     expect(response.statusCode).toBe(200)
     expect(response.body).toContain('"Response"')
     expect(response.body).toContain('"Invitation requested"')
     expect(response.body).toContain('"RSVP confirmed"')
+    expect(response.body).toContain('"Waitlist joined"')
     expect(response.headers['content-disposition']).toContain('event-rsvps.csv')
   })
   it('rejects unknown scopes before querying the database', async () => {
     const { app, query } = setup('admin')
     expect((await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=accounts' })).statusCode).toBe(400)
     expect(query).not.toHaveBeenCalled()
+  })
+  it('preserves saved responses without current event or educator eligibility filters', async () => {
+    const { app, query } = setup('admin')
+    const historical = { id: 'older-response', deal_id: 'archived-event', cta_type: 'join_waitlist', member_id: 'OLD-123', full_name: 'Past attendee', email: 'saved@example.test', business_name: 'Past partner', event_name: 'Past event', submitted_at: '2020-01-01T00:00:00Z' }
+    query.mockResolvedValueOnce({ rows: [historical] }).mockResolvedValueOnce({ rows: [{ submissions: 1, educators: 1 }] }).mockResolvedValueOnce({ rows: [{ id: 'archived-event', cta_type: 'use_deal', interested: 1 }] })
+    const response = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events' })
+    expect(response.json()).toMatchObject({ submissions: [historical], totals: { submissions: 1, educators: 1 }, offers: [{ id: 'archived-event', interested: 1 }] })
+    for (const [sql] of query.mock.calls) {
+      expect(sql).not.toMatch(/published|starts_at|ends_at|educator_verified_at|member_cards|JOIN users/)
+    }
+    expect(query.mock.calls.every(([sql]) => /^SELECT/.test(sql.trim()))).toBe(true)
   })
 })

@@ -176,7 +176,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
   return <section className={`admin-card admin-table-card offer-interests${rsvpsOnly ? ' event-responses' : ''}`} aria-busy={loading}>
     <div className="admin-card-heading"><div>
       <h2>{rsvpsOnly ? 'RSVPs & invitations' : invitesOnly ? 'Invite Requests' : 'Interested educators'}</h2>
-      <p>{rsvpsOnly ? 'Event responses only. Creating a TeachersVIP account does not create an RSVP. Invitation requests and confirmed RSVPs are labelled separately.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
+      <p>{rsvpsOnly ? 'All saved event responses, past and current, including older waitlist signups. Each response keeps its original status. Creating a TeachersVIP account does not create an RSVP.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
       {!rsvpsOnly && <Link className="back-link" to="/admin/rsvps">Open RSVPs & invitations</Link>}
     </div></div>
     {rsvpsOnly && <div className="event-shortcuts" aria-label="Event shortcuts">
@@ -197,6 +197,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
         <option value="">All event responses</option>
         <option value="rsvp">RSVP confirmed</option>
         <option value="get_launch_invite">Invitation requested</option>
+        <option value="join_waitlist">Waitlist joined</option>
       </select></label>}
       <button type="button" className="action action-soft" disabled={loading} onClick={() => setRevision(value => value + 1)}>Refresh list</button>
       <button type="button" className="action action-gold" disabled={loading || exporting || !data?.totals.submissions} onClick={() => void download()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
@@ -204,11 +205,11 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
     {rsvpsOnly && selectedOffer?.cta_type === 'get_launch_invite' && <div className="notice">This event is collecting invitation requests. An invitation request does not confirm attendance.</div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
     {loading ? <p role="status">{rsvpsOnly ? 'Loading event responses…' : 'Loading interested educators…'}</p> : data && <>
-      <div className="interest-totals" role="status"><strong>{data.totals.educators} {rsvpsOnly ? 'educators responded' : 'total interested educators'}</strong><span>{data.totals.submissions} {rsvpsOnly ? responseType === 'rsvp' ? 'confirmed RSVPs' : responseType === 'get_launch_invite' ? 'invitation requests' : 'event responses' : 'event submissions'}</span></div>
+      <div className="interest-totals" role="status"><strong>{data.totals.educators} {rsvpsOnly ? 'educators responded' : 'total interested educators'}</strong><span>{data.totals.submissions} {rsvpsOnly ? responseType === 'rsvp' ? 'confirmed RSVPs' : responseType === 'get_launch_invite' ? 'invitation requests' : responseType === 'join_waitlist' ? 'waitlist signups' : 'event responses' : 'event submissions'}</span></div>
       {data.submissions.length ? <div className="interest-table-scroll" tabIndex={0} role="region" aria-label={rsvpsOnly ? 'Event responses list' : 'Interested educators list'}><table className="interest-table">
         <thead><tr>{columns.map(column => <th scope="col" key={column.key}>{column.label}</th>)}</tr></thead>
         <tbody>{data.submissions.map(row => <tr key={row.id}>{columns.map(column => <td key={column.key} data-label={column.label}><span>{column.key === 'cta_type' ? (rsvpsOnly ? OFFER_RESPONSE_LABELS : OFFER_CTA_LABELS)[row.cta_type] : column.key === 'submitted_at' ? new Date(row.submitted_at).toLocaleString() : row[column.key]}</span></td>)}</tr>)}</tbody>
-      </table></div> : <p className="admin-empty">{rsvpsOnly ? 'No event responses match these filters. An educator appears here only after submitting an RSVP or invitation request.' : 'No interested educators for this selection yet.'}</p>}
+      </table></div> : <p className="admin-empty">{rsvpsOnly ? 'No saved event responses match these filters. Responses appear after an educator submits an RSVP, invitation request or event waitlist signup.' : 'No interested educators for this selection yet.'}</p>}
       {data.totals.submissions > data.pageSize && <div className="interest-pagination"><button type="button" className="action action-soft" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.totals.submissions / data.pageSize)}</span><button type="button" className="action action-soft" disabled={page * data.pageSize >= data.totals.submissions} onClick={() => setPage(value => value + 1)}>Next</button></div>}
     </>}
   </section>

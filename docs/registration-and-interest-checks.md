@@ -21,6 +21,12 @@ Checked locally on 27 October 2026.
 - Agent-browser checks used controlled synthetic responses. Event A showed two submissions; event B showed one; an empty event showed zero totals and the empty state with export disabled. The CSV contained only event B. Rapid A-to-B switching retained B after the slower A response finished. A failed request cleared results while retaining filter options. Business filtering and the registration form were also checked at 375px without page overflow.
 - With a controlled verified-member session, the full application opened an RSVP offer and displayed the saved confirmation after submission. The post-verification page displayed its offer/RSVP link. These checks validate client behavior; API authorization is covered separately above.
 
+## Historical RSVP responses
+
+The RSVP tab reads saved `offer_interest_submissions` from the database configured on the deployed application. Its default view includes confirmed RSVPs, invitation requests and older event waitlist signups, preserving each original response type. Expired or unpublished offers, a changed current offer type, and a member's current verification/card status do not hide retained submissions. Business/event/response filters apply equally to the list, totals and full CSV export; lists beyond 100 submissions are paginated.
+
+This is a read-only compatibility change: it needs no data migration, provider login or manual import. It does not create event responses from account registrations, approval emails or the general platform waitlist. No client production records were queried or changed to validate this behavior.
+
 ## Limits
 
 The existing API already applies the selected event/business/CTA filters to rows, totals and CSV. The reported production mismatch was not reproduced against a live authenticated database; the client changes strengthen selection ownership and caching behavior, and regression checks protect the API filtering contract.
