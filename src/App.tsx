@@ -1902,7 +1902,46 @@ function Verify({
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [devUrl, setDevUrl] = useState(params.get("devVerificationUrl") || ""),
-    [signingOut, setSigningOut] = useState(false)
+    [signingOut, setSigningOut] = useState(false),
+    [checkingStatus, setCheckingStatus] = useState(false)
+
+  const checkingStatusRef = useRef(false)
+
+  const checkStatus = useCallback(async (showPendingMessage = false) => {
+    if (checkingStatusRef.current) return
+    checkingStatusRef.current = true
+    setCheckingStatus(true)
+    try {
+      const nextUser = await refresh()
+      if (nextUser?.verified) {
+        setMessage("Your educator eligibility is approved. Returning you to your event…")
+        navigate(pendingOfferDestination(), { replace: true })
+      } else if (showPendingMessage && nextUser) {
+        setMessage("Your verification is still under review. We’ll move you into TeachersVIP automatically as soon as it’s approved.")
+      } else if (showPendingMessage) {
+        setError("We couldn’t check your status. Please try again.")
+      }
+    } finally {
+      checkingStatusRef.current = false
+      setCheckingStatus(false)
+    }
+  }, [navigate, refresh])
+
+  useEffect(() => {
+    if (user.verification_status !== "manual_review") return
+    let active = true
+    const refreshWhenVisible = () => {
+      if (active && document.visibilityState === "visible") void checkStatus()
+    }
+    refreshWhenVisible()
+    const timer = window.setInterval(refreshWhenVisible, 10_000)
+    document.addEventListener("visibilitychange", refreshWhenVisible)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      document.removeEventListener("visibilitychange", refreshWhenVisible)
+    }
+  }, [checkStatus, user.verification_status])
 
   useEffect(() => {
     const token = params.get("token")
@@ -2004,10 +2043,11 @@ function Verify({
           </form>
         )}
         {user.verification_status === "manual_review" && <div className="form-grid">
-          <Button onClick={() => void refresh().then((nextUser) => {
-            if (nextUser?.verified) navigate('/youre-on-the-list', { replace: true })
-            else if (nextUser) setMessage("Your verification is still under review.")
-          })}>Check verification status</Button>
+          <Button disabled={checkingStatus} onClick={() => {
+            setError("")
+            void checkStatus(true)
+          }}>{checkingStatus ? "Checking status…" : "Check verification status"}</Button>
+          <small role="status">This page checks for approval automatically. You can leave it open; it will continue to your event when educator access is ready.</small>
         </div>}
         <small>
           Your email address is used to confirm ownership. Only K-12 educators
@@ -6408,12 +6448,12 @@ function AdminOperationsPage({ view }: { view: string }) {
       await patch(`/admin/verifications/${item.id}`, { action, notes })
 
       setVerificationMessage(
-        `Verification case for ${item.email} ${
-          action === "approve"
-            ? "approved"
-            : action === "reject"
-              ? "rejected"
-              : "kept in review with an information request"
+        action === "approve"
+          ? `Educator eligibility approved for ${item.email}. Any event RSVP is unchanged; view it in RSVPs.`
+          : `Educator verification for ${item.email} ${
+              action === "reject"
+                ? "rejected"
+                : "kept in review with an information request"
         }.`,
       )
 
@@ -6549,11 +6589,12 @@ function AdminOperationsPage({ view }: { view: string }) {
             <div className="admin-card-heading">
               <ShieldCheck size={22} />
               <div>
-                <h2>Educator verification queue</h2>
+                <h2>Educator eligibility review</h2>
                 <p>
                   Shared university, unknown, and personal domains go to manual
-                  review.
+                  review. Approving here unlocks educator access; it does not approve or create an event RSVP. The same member can appear in both lists.
                 </p>
+                <Link className="back-link" to="/admin/rsvps">Open event RSVPs</Link>
               </div>
             </div>
             {verificationMessage && <Notice kind="success">{verificationMessage}</Notice>}

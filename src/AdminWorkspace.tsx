@@ -39,7 +39,7 @@ export const ADMIN_SECTIONS = [
   {
     path: "educators",
     label: "Educators",
-    description: "Educator eligibility requests and member review",
+    description: "Approve educator eligibility; event RSVPs stay in RSVPs",
     icon: ShieldCheck,
   },
 

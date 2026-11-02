@@ -252,7 +252,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
   return <section className={`admin-card admin-table-card offer-interests${rsvpsOnly ? ' event-responses' : ''}`} aria-busy={loading}>
     <div className="admin-card-heading"><div>
       <h2>{rsvpsOnly ? 'RSVPs & invitations' : invitesOnly ? 'Invite Requests' : 'Interested educators'}</h2>
-      <p>{rsvpsOnly ? 'All saved event responses, past and current, including older waitlist signups. Each response keeps its original status. Creating a TeachersVIP account does not create an RSVP.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
+      <p>{rsvpsOnly ? 'Saved event responses, including older signups. RSVP confirmed means the educator submitted an RSVP; invitation requests and waitlist signups remain separate. This list does not approve educator eligibility. Use Educators for that review.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
       {!rsvpsOnly && <Link className="back-link" to="/admin/rsvps">Open RSVPs & invitations</Link>}
       {rsvpsOnly && <a className="back-link" href="#registered-only">Find a registered member without an event response</a>}
     </div></div>
