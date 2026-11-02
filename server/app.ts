@@ -3361,13 +3361,13 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return { totals: totals.rows[0], cities: cities.rows, viewed: viewed.rows, saved: saved.rows }
   })
 
-  registerOfferInterestRoutes(app, db, requireVerified, requireSuperadmin, async (submission) => {
+  registerOfferInterestRoutes(app, db, requireVerified, requireSuperadmin, async (submission, idempotencyKey) => {
     if (!resend) return false
     const { error } = await resend.emails.send({
       from: config.RESEND_FROM_EMAIL,
       to: submission.email,
       ...rsvpConfirmationEmail(submission, config.APP_URL),
-    })
+    }, { idempotencyKey })
     if (error) throw error
     return true
   })

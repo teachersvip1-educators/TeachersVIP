@@ -14,8 +14,67 @@ export function csvCell(value: unknown): string {
 
 type Authorize = (request: FastifyRequest) => { id: string; first_name?: string }
 type RsvpSubmission = RsvpConfirmation & { business_name: string; deal_id: string }
+type RsvpEmailSender = (submission: RsvpSubmission, idempotencyKey: string) => Promise<boolean>
 
-export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, requireVerified: Authorize, requireSuperadmin: Authorize, sendRsvpConfirmation?: (submission: RsvpSubmission) => Promise<boolean>) {
+export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, requireVerified: Authorize, requireSuperadmin: Authorize, sendRsvpConfirmation?: RsvpEmailSender) {
+  async function deliverRsvpConfirmation(id: string, userId: string, forceResend: boolean) {
+    if (!sendRsvpConfirmation) return { sent: false, unavailable: true }
+    const claimed = await db.query<RsvpSubmission & { rsvp_confirmation_attempt_key: string }>(
+      `UPDATE offer_interest_submissions s
+       SET rsvp_confirmation_claimed_at=now(),
+           rsvp_confirmation_attempted_at=now(),
+           rsvp_confirmation_attempt_key=CASE
+             WHEN $3::boolean AND (
+               s.rsvp_confirmation_attempt_key IS NULL
+               OR (
+                 s.rsvp_confirmation_sent_at IS NOT NULL
+                 AND (
+                   s.rsvp_confirmation_attempted_at IS NULL
+                   OR s.rsvp_confirmation_attempted_at <= s.rsvp_confirmation_sent_at
+                 )
+               )
+             ) THEN $4::uuid
+             ELSE COALESCE(s.rsvp_confirmation_attempt_key,$4::uuid)
+           END
+       FROM users u, deals d
+       WHERE s.id=$1 AND s.user_id=$2 AND s.cta_type='rsvp'
+         AND u.id=s.user_id AND d.id=s.deal_id
+         AND (s.rsvp_confirmation_claimed_at IS NULL OR s.rsvp_confirmation_claimed_at < now()-interval '5 minutes')
+         AND (s.rsvp_confirmation_attempted_at IS NULL OR s.rsvp_confirmation_attempted_at < now()-interval '1 minute')
+         AND ($3::boolean OR s.rsvp_confirmation_sent_at IS NULL)
+       RETURNING s.id,s.email,s.event_name,s.business_name,s.deal_id,
+         COALESCE(NULLIF(u.first_name,''),'there') first_name,
+         d.event_date_time,d.event_location,s.rsvp_confirmation_attempt_key`,
+      [id, userId, forceResend, randomUUID()],
+    )
+    const submission = claimed.rows[0]
+    if (!submission) {
+      const state = await db.query<{ rsvp_confirmation_sent_at: string | null }>(
+        `SELECT rsvp_confirmation_sent_at FROM offer_interest_submissions
+         WHERE id=$1 AND user_id=$2 AND cta_type='rsvp'`, [id, userId],
+      )
+      if (!state.rows.length) return { sent: false, notFound: true }
+      if (!forceResend && state.rows[0].rsvp_confirmation_sent_at) return { sent: true }
+      return { sent: false, throttled: true }
+    }
+
+    const idempotencyKey = `rsvp-confirmation/${submission.id}/${submission.rsvp_confirmation_attempt_key}`
+    let sent = false
+    try {
+      sent = await sendRsvpConfirmation(submission, idempotencyKey)
+    } catch (error) {
+      app.log.error({ error, submissionId: submission.id }, 'RSVP confirmation email failed')
+    }
+    await db.query(
+      `UPDATE offer_interest_submissions
+       SET rsvp_confirmation_sent_at=CASE WHEN $2 THEN now() ELSE rsvp_confirmation_sent_at END,
+           rsvp_confirmation_claimed_at=NULL
+       WHERE id=$1 AND rsvp_confirmation_attempt_key=$3::uuid`,
+      [submission.id, sent, submission.rsvp_confirmation_attempt_key],
+    )
+    return { sent }
+  }
+
   app.get('/api/admin/registrations-without-response', async (request, reply) => {
     requireSuperadmin(request)
     const parsed = z.object({ search: z.string().trim().max(150).default(''), page: z.coerce.number().int().min(1).default(1), export: z.enum(['csv']).optional() }).safeParse(request.query)
@@ -62,18 +121,31 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
        AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())
        ON CONFLICT(user_id,deal_id) DO UPDATE SET cta_type=EXCLUDED.cta_type,member_id=EXCLUDED.member_id,full_name=EXCLUDED.full_name,email=EXCLUDED.email,business_name=EXCLUDED.business_name,event_name=EXCLUDED.event_name,submitted_at=now()
        WHERE EXCLUDED.cta_type='rsvp' AND offer_interest_submissions.cta_type<>'rsvp'
-       RETURNING id,submitted_at,cta_type,email,event_name,business_name,deal_id`, [randomUUID(), user.id, id],
+       RETURNING id,submitted_at,cta_type,email,event_name,business_name,deal_id,rsvp_confirmation_sent_at`, [randomUUID(), user.id, id],
     )
     const existing = inserted.rows[0] ?? (await db.query(
-      'SELECT id,submitted_at FROM offer_interest_submissions WHERE user_id=$1 AND deal_id=$2', [user.id, id],
+      `SELECT id,submitted_at,cta_type,email,event_name,business_name,deal_id,rsvp_confirmation_sent_at
+       FROM offer_interest_submissions WHERE user_id=$1 AND deal_id=$2`, [user.id, id],
     )).rows[0]
     if (!existing) return reply.code(403).send({ error: 'An active verified membership is required to register interest.' })
-    let confirmationEmailSent = false
-    if (inserted.rows.length && existing.cta_type === 'rsvp' && sendRsvpConfirmation) {
-      try { confirmationEmailSent = await sendRsvpConfirmation({ ...existing, first_name: user.first_name || 'there', event_date_time: eligible.rows[0].event_date_time ?? null, event_location: eligible.rows[0].event_location ?? null }) }
-      catch (error) { request.log.error({ error, submissionId: existing.id }, 'RSVP confirmation email failed') }
-    }
+    const delivery = existing.cta_type === 'rsvp'
+      ? existing.rsvp_confirmation_sent_at
+        ? { sent: true }
+        : await deliverRsvpConfirmation(existing.id, user.id, false)
+      : { sent: false }
+    const confirmationEmailSent = delivery.sent
     return reply.code(inserted.rows.length ? 201 : 200).send({ submission: { id: existing.id, submitted_at: existing.submitted_at }, alreadySubmitted: !inserted.rows.length, confirmationEmailSent })
+  })
+
+  app.post('/api/me/rsvps/:id/confirmation', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
+    const user = requireVerified(request)
+    const params = z.object({ id: z.uuid() }).safeParse(request.params)
+    if (!params.success) return reply.code(400).send({ error: 'Invalid RSVP link.' })
+    const result = await deliverRsvpConfirmation(params.data.id, user.id, true)
+    if (result.sent) return reply.header('Cache-Control', 'no-store').send({ sent: true })
+    if (result.notFound) return reply.code(404).send({ error: 'No active RSVP was found for this account.' })
+    if (result.throttled) return reply.code(429).send({ error: 'Please wait a minute before requesting another confirmation email.' })
+    return reply.code(503).send({ error: 'Your RSVP is saved, but we could not send the confirmation email. Please try again shortly.' })
   })
 
   app.get('/api/me/rsvps/:id', async (request, reply) => {

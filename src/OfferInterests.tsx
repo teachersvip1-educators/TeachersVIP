@@ -20,7 +20,9 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
   const [submitted, setSubmitted] = useState(Boolean(deal.interest_submitted))
   const [rsvpId, setRsvpId] = useState(deal.rsvp_id)
   const [busy, setBusy] = useState(false)
+  const [emailBusy, setEmailBusy] = useState(false)
   const [error, setError] = useState('')
+  const [emailError, setEmailError] = useState('')
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false)
   const confirmationRef = useRef<HTMLDivElement>(null)
   useEffect(() => { setSubmitted(Boolean(deal.interest_submitted)); setRsvpId(deal.rsvp_id); setError(''); setConfirmationEmailSent(false) }, [deal.id, deal.interest_submitted, deal.rsvp_id])
@@ -38,9 +40,20 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       const result = await post<{ confirmationEmailSent?: boolean; submission: { id: string } }>(`/deals/${encodeURIComponent(deal.id)}/interest`, {})
       setRsvpId(result.submission.id)
       setConfirmationEmailSent(Boolean(result.confirmationEmailSent))
+      setEmailError('')
       setSubmitted(true)
       try { localStorage.removeItem(pendingKey) } catch { /* Optional return destination. */ }
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  const resendConfirmation = async () => {
+    if (!rsvpId) return
+    setEmailBusy(true); setEmailError('')
+    try {
+      await post<{ sent: boolean }>(`/me/rsvps/${encodeURIComponent(rsvpId)}/confirmation`, {})
+      setConfirmationEmailSent(true)
+    } catch (e) {
+      setEmailError((e as Error).message)
+    } finally { setEmailBusy(false) }
   }
   return <section className="deal-detail interest-offer-detail">
     <div className="deal-detail-media">
@@ -57,7 +70,10 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       {submitted ? <div ref={confirmationRef} className="notice notice-success" role="status">
         <strong>{deal.cta_type === 'rsvp' ? 'Thank you for RSVPing!' : deal.cta_type === 'get_launch_invite' ? 'Your launch invite request is saved.' : 'You’re on the waitlist.'}</strong>
         <p>{deal.cta_type === 'rsvp' ? `Your RSVP for ${deal.event_name || deal.title} with ${deal.business_name} is confirmed. We look forward to seeing you!` : `Your interest has been recorded for ${deal.business_name}. You only need to submit once.`}</p>
-        {confirmationEmailSent && <p>A confirmation has also been sent to your preferred email.</p>}
+        {deal.cta_type === 'rsvp' && confirmationEmailSent && <p>Your RSVP confirmation email has been sent.</p>}
+        {deal.cta_type === 'rsvp' && !confirmationEmailSent && <p>Your RSVP is saved. If the confirmation email did not arrive, you can request it below.</p>}
+        {deal.cta_type === 'rsvp' && rsvpId && <button type="button" className="action action-soft" disabled={emailBusy} onClick={() => void resendConfirmation()}>{emailBusy ? 'Sending confirmation…' : confirmationEmailSent ? 'Email me the confirmation again' : 'Email me my RSVP confirmation'}</button>}
+        {emailError && <p className="field-error" role="alert">{emailError}</p>}
         {deal.cta_type === 'rsvp' && rsvpId && <Link className="back-link" to={`/rsvp/${rsvpId}`}>Manage your RSVP</Link>}
       </div> : user?.is_demo ? <p>Demo preview: verified educators can RSVP here and receive an immediate thank-you and confirmation.</p> : user?.verified ? <>
         <p id="interest-consent" className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
