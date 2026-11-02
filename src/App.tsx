@@ -73,6 +73,7 @@ import {
 
 import {
   AdminOfferInterests,
+  AdminUnassignedRegistrations,
   OfferInterestDetail,
   ManageRsvp,
   pendingOfferDestination,
@@ -4099,27 +4100,6 @@ type CreatorNetworkFilterState = {
   status: "" | "new" | "contacted" | "archived"
 }
 
-type DomainReview = {
-  id: string
-
-  normalized_domain: string
-
-  classification: "staff_only" | "shared_staff_student" | "personal_provider" | "unknown"
-
-  decision: "auto_eligible" | "manual_review" | "blocked"
-
-  eligible_role: "K-12 educator" | "College professor" | "both" | null
-
-  evidence: string | null
-
-  evidence_url: string | null
-
-  reviewed_at: string | null
-
-  institution_name: string | null
-
-  source_code: string | null
-}
 
 function resizeDealImage(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -6179,107 +6159,6 @@ function ActivationSupport() {
   )
 }
 
-function DomainReviewForm({
-  domain,
-
-  onChanged,
-}: {
-  domain: DomainReview
-
-  onChanged: () => Promise<void>
-}) {
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("")
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    setBusy(true)
-
-    setError("")
-
-    const data = new FormData(event.currentTarget)
-
-    try {
-      await patch(`/admin/domains/${domain.id}`, {
-        classification: data.get("classification"),
-
-        decision: data.get("decision"),
-
-        eligibleRole: data.get("eligibleRole") || null,
-
-        evidence: data.get("evidence") || null,
-
-        evidenceUrl: data.get("evidenceUrl") || null,
-      })
-
-      await onChanged()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <form className="domain-review-form form-grid" onSubmit={submit}>
-      <div>
-        <strong>{domain.normalized_domain}</strong>
-        <small>
-          {domain.institution_name || "Unlinked institution"}
-          {domain.source_code ? ` · ${domain.source_code}` : ""}
-          {domain.reviewed_at ? " · reviewed" : " · needs review"}
-        </small>
-      </div>
-      <div className="three">
-        <label className="field">
-          <span>Classification</span>
-          <select name="classification" defaultValue={domain.classification}>
-            <option value="staff_only">Staff/faculty only</option>
-            <option value="shared_staff_student">Shared staff/student</option>
-            <option value="personal_provider">Personal email provider</option>
-            <option value="unknown">Unknown</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Decision</span>
-          <select name="decision" defaultValue={domain.decision}>
-            <option value="manual_review">Manual review</option>
-            <option value="auto_eligible">Automatic eligibility</option>
-            <option value="blocked">Blocked from automatic eligibility</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Eligible role</span>
-          <select name="eligibleRole" defaultValue={domain.eligible_role || ""}>
-            <option value="">Not set</option>
-            <option value="K-12 educator">K-12 educator</option>
-            <option value="College professor">College professor</option>
-            <option value="both">Both educator roles</option>
-          </select>
-        </label>
-      </div>
-      <label className="field">
-        <span>Evidence</span>
-        <textarea
-          name="evidence"
-          defaultValue={domain.evidence || ""}
-          placeholder="Why this domain is staff-only or requires manual review"
-        />
-      </label>
-      <Field
-        label="Official evidence URL (optional)"
-        name="evidenceUrl"
-        type="url"
-        defaultValue={domain.evidence_url || ""}
-      />
-      {error && <Notice kind="error">{error}</Notice>}
-      <Button type="submit" disabled={busy}>
-        {busy ? "Saving domain…" : "Save Domain Decision"}
-      </Button>
-    </form>
-  )
-}
 
 function AdminOperationsPage({ view }: { view: string }) {
   const [loading, setLoading] = useState(true)
@@ -6314,7 +6193,6 @@ function AdminOperationsPage({ view }: { view: string }) {
 
         locations: [],
       }),
-    [domains, setDomains] = useState<DomainReview[]>([]),
     [reviewNotes, setReviewNotes] = useState<Record<string, string>>({}),
     [verificationErrors, setVerificationErrors] = useState<Record<string, string>>({}),
     [verificationMessage, setVerificationMessage] = useState(""),
@@ -6408,17 +6286,11 @@ function AdminOperationsPage({ view }: { view: string }) {
 
   const load = async () => {
     try {
-      const [result, domainResult] = await Promise.all([
-        api<{
-          verificationQueue?: VerificationCase[]
-
-          metrics?: Partial<typeof metrics>
-
-          activationMetrics?: ActivationMetric[]
-        }>("/admin/overview"),
-
-        api<{ domains: DomainReview[] }>("/admin/domains"),
-      ])
+      const result = await api<{
+        verificationQueue?: VerificationCase[]
+        metrics?: Partial<typeof metrics>
+        activationMetrics?: ActivationMetric[]
+      }>("/admin/overview")
 
       setQueue(result.verificationQueue || [])
 
@@ -6426,7 +6298,6 @@ function AdminOperationsPage({ view }: { view: string }) {
 
       setActivity(result.activationMetrics || [])
 
-      setDomains(domainResult.domains)
 
       await Promise.all([
         loadCreators(),
@@ -6668,38 +6539,6 @@ function AdminOperationsPage({ view }: { view: string }) {
             <div>
               <strong>{metrics.deniedOnSiteAttempts}</strong>
               <span>DENIED ON-SITE ATTEMPTS</span>
-            </div>
-          </section>
-        </>
-      )}
-      {view === "educators" && (
-        <>
-          <section className="admin-card admin-table-card">
-            <div className="admin-card-heading">
-              <ShieldCheck size={22} />
-              <div>
-                <h2>Approved Email Domains</h2>
-                <p>
-                  Automatic approval is available only after a domain is
-                  reviewed as staff/faculty-only with evidence and an eligible
-                  role.
-                </p>
-              </div>
-            </div>
-            <div className="domain-review-list">
-              {domains.map((domain) => (
-                <DomainReviewForm
-                  key={domain.id}
-                  domain={domain}
-                  onChanged={load}
-                />
-              ))}
-              {!domains.length && (
-                <p className="admin-empty">
-                  Import an official NCES or Department of Education release to
-                  begin domain review.
-                </p>
-              )}
             </div>
           </section>
         </>
@@ -7144,6 +6983,7 @@ function AdminRouter({ userId }: { userId: string }) {
     return <Page title="RSVPs">
       <AdminNavigation section="rsvps" />
       <AdminOfferInterests rsvpsOnly />
+      <AdminUnassignedRegistrations />
     </Page>
 
   if (["overview", "businesses-deals", "requests-messages"].includes(view))

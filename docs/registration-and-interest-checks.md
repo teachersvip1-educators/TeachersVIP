@@ -27,6 +27,14 @@ The RSVP tab reads saved `offer_interest_submissions` from the database configur
 
 This is a read-only compatibility change: it needs no data migration, provider login or manual import. It does not create event responses from account registrations, approval emails or the general platform waitlist. No client production records were queried or changed to validate this behavior.
 
+## Account-only registrations and admin cleanup — 3 November 2026
+
+- Admin RSVPs now has a separate **Registered only** list, backed by `/api/admin/registrations-without-response`. It reads existing non-demo, non-admin accounts with no saved event response, including older and unverified accounts. It does not assign those registrations to an event or count them as confirmed attendance.
+- Registration name/email search, totals, pagination and full CSV export use the same database filters. Event selection remains independent, so selecting an empty event does not hide account-only registrations.
+- Removed the Approved Email Domains panel, domain review forms and the frontend dependency on `/api/admin/domains`. The educator eligibility queue remains separate from the automatic verification logic.
+- Added in-memory PostgreSQL route tests with 102 historical event responses and 125 account-only registrations. They execute the actual SQL and cover archived offers, changed offer types, unverified members, original response snapshots, pagination, search, filtered totals, CSV, and authorization. These fixtures are synthetic and do not access client data.
+- Local browser checks exercised both database-backed lists, event/response filtering, registration search, empty events, mobile layout and removal of domain controls.
+
 ## Limits
 
 The existing API already applies the selected event/business/CTA filters to rows, totals and CSV. The reported production mismatch was not reproduced against a live authenticated database; the client changes strengthen selection ownership and caching behavior, and regression checks protect the API filtering contract.

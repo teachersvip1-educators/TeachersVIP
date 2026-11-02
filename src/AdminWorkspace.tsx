@@ -39,7 +39,7 @@ export const ADMIN_SECTIONS = [
   {
     path: "educators",
     label: "Educators",
-    description: "Verification requests and approved email domains",
+    description: "Educator eligibility requests and member review",
     icon: ShieldCheck,
   },
 

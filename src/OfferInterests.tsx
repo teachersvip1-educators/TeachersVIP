@@ -110,6 +110,82 @@ export function ManageRsvp({ user }: { user: { verified: boolean; is_demo?: bool
 type Submission = { id: string; deal_id: string; cta_type: OfferCtaType; member_id: string; full_name: string; email: string; business_name: string; event_name: string; submitted_at: string }
 type InterestData = { submissions: Submission[]; totals: { submissions: number; educators: number }; offers: { id: string; title: string; event_name: string; business_name: string; business_id: string; cta_type: OfferCtaType; interested: number }[]; page: number; pageSize: number }
 
+type RegistrationOnly = { id: string; full_name: string; email: string; city: string; is_verified: boolean; registered_at: string }
+type RegistrationData = { registrations: RegistrationOnly[]; totals: { members: number }; page: number; pageSize: number }
+
+export function AdminUnassignedRegistrations() {
+  const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [revision, setRevision] = useState(0)
+  const [result, setResult] = useState<{ key: string; data: RegistrationData } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setAppliedSearch(search.trim()); setPage(1) }, 250)
+    return () => window.clearTimeout(timer)
+  }, [search])
+  const queryKey = new URLSearchParams({ search: appliedSearch, page: String(page) }).toString()
+  const data = result?.key === queryKey && search.trim() === appliedSearch ? result.data : null
+  const loading = busy || (!data && !error)
+  useEffect(() => {
+    const controller = new AbortController()
+    let current = true
+    setBusy(true); setError('')
+    api<RegistrationData>(`/admin/registrations-without-response?${queryKey}`, { signal: controller.signal, cache: 'no-store' })
+      .then(data => { if (current) setResult({ key: queryKey, data }) })
+      .catch(e => { if (current) { setError(e.message); setResult(null) } })
+      .finally(() => { if (current) setBusy(false) })
+    return () => { current = false; controller.abort() }
+  }, [queryKey, revision])
+  const download = async () => {
+    setExporting(true); setError('')
+    try {
+      const filters = new URLSearchParams(queryKey)
+      filters.delete('page'); filters.set('export', 'csv')
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/admin/registrations-without-response?${filters}`, { credentials: 'include', cache: 'no-store' })
+      if (!response.ok) throw new Error((await response.json()).error || 'Export failed.')
+      const url = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = url; link.download = 'registered-only.csv'
+      document.body.appendChild(link); link.click(); link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e) { setError((e as Error).message) } finally { setExporting(false) }
+  }
+  return <section id="registered-only" className="admin-card admin-table-card event-responses" aria-busy={loading}>
+    <div className="admin-card-heading"><div>
+      <h2>Registered only</h2>
+      <p>Members with an account but no saved event response, including older registrations. They are not confirmed attendees and are not assigned to the event selected above.</p>
+    </div></div>
+    <div className="interest-list-tools">
+      <label className="field"><span>Find a registration</span><input type="search" maxLength={150} placeholder="Name or school email" value={search} onChange={event => setSearch(event.target.value)} /></label>
+      <button type="button" className="action action-soft" disabled={loading} onClick={() => setRevision(value => value + 1)}>Refresh registrations</button>
+      <button type="button" className="action action-gold" disabled={loading || exporting || !data?.totals.members} onClick={() => void download()}>{exporting ? 'Exporting…' : 'Export registrations'}</button>
+    </div>
+    {error && <div className="notice notice-error" role="alert">{error}</div>}
+    {loading ? <p role="status">Loading registrations…</p> : data && <>
+      <div className="interest-totals" role="status"><strong>{data.totals.members} registered only</strong><span>No saved event response</span></div>
+      {data.registrations.length ? <div className="interest-table-scroll" role="region" aria-label="Registered members without an event response" tabIndex={0}><table className="interest-table">
+        <thead><tr>{['Name', 'School / account email', 'City', 'Educator eligibility', 'Event response', 'Registration date'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
+        <tbody>{data.registrations.map(row => <tr key={row.id}>
+          <td data-label="Name"><span>{row.full_name}</span></td>
+          <td data-label="School / account email"><span>{row.email}</span></td>
+          <td data-label="City"><span>{row.city}</span></td>
+          <td data-label="Educator eligibility"><span>{row.is_verified ? 'Verified' : 'Not verified'}</span></td>
+          <td data-label="Event response"><span>Registered only</span></td>
+          <td data-label="Registration date"><span>{new Date(row.registered_at).toLocaleString()}</span></td>
+        </tr>)}</tbody>
+      </table></div> : <p className="admin-empty">No registrations without an event response match this search.</p>}
+      {data.totals.members > data.pageSize && <div className="interest-pagination">
+        <button type="button" className="action action-soft" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button>
+        <span>Page {page} of {Math.ceil(data.totals.members / data.pageSize)}</span>
+        <button type="button" className="action action-soft" disabled={page * data.pageSize >= data.totals.members} onClick={() => setPage(value => value + 1)}>Next</button>
+      </div>}
+    </>}
+  </section>
+}
+
 export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: { invitesOnly?: boolean; rsvpsOnly?: boolean }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [result, setResult] = useState<{ key: string; data: InterestData } | null>(null)
@@ -178,6 +254,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
       <h2>{rsvpsOnly ? 'RSVPs & invitations' : invitesOnly ? 'Invite Requests' : 'Interested educators'}</h2>
       <p>{rsvpsOnly ? 'All saved event responses, past and current, including older waitlist signups. Each response keeps its original status. Creating a TeachersVIP account does not create an RSVP.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
       {!rsvpsOnly && <Link className="back-link" to="/admin/rsvps">Open RSVPs & invitations</Link>}
+      {rsvpsOnly && <a className="back-link" href="#registered-only">Find a registered member without an event response</a>}
     </div></div>
     {rsvpsOnly && <div className="event-shortcuts" aria-label="Event shortcuts">
       <button type="button" className="action action-soft" aria-pressed={dealId === 'batters-brunch-grand-opening'} onClick={() => { setBusinessId(''); setDealId('batters-brunch-grand-opening'); setPage(1) }}>Batters &amp; Brunch</button>

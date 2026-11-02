@@ -16,6 +16,32 @@ type Authorize = (request: FastifyRequest) => { id: string; first_name?: string 
 type RsvpSubmission = RsvpConfirmation & { business_name: string; deal_id: string }
 
 export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, requireVerified: Authorize, requireSuperadmin: Authorize, sendRsvpConfirmation?: (submission: RsvpSubmission) => Promise<boolean>) {
+  app.get('/api/admin/registrations-without-response', async (request, reply) => {
+    requireSuperadmin(request)
+    const parsed = z.object({ search: z.string().trim().max(150).default(''), page: z.coerce.number().int().min(1).default(1), export: z.enum(['csv']).optional() }).safeParse(request.query)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid registration-list filters.' })
+    const { search, page, export: format } = parsed.data
+    // Registration has always been stored separately from event responses.
+    // Read existing accounts directly; never manufacture an event/attendance
+    // record from an account creation email or current verification status.
+    const where = `WHERE NOT u.is_demo AND NOT u.is_superadmin
+      AND NOT EXISTS (SELECT 1 FROM offer_interest_submissions s WHERE s.user_id=u.id)
+      AND ($1::text='' OR position(lower($1) in lower(concat_ws(' ',u.first_name,u.last_name,u.personal_email,u.work_email)))>0)`
+    const result = await db.query(
+      `SELECT u.id,concat_ws(' ',u.first_name,u.last_name) full_name,COALESCE(u.work_email,u.personal_email) email,
+        u.city,u.educator_verified_at IS NOT NULL is_verified,u.created_at registered_at
+       FROM users u ${where} ORDER BY u.created_at DESC,u.id ${format ? '' : 'LIMIT 100 OFFSET $2'}`,
+      format ? [search] : [search, (page - 1) * 100],
+    )
+    if (format) {
+      const lines = [['Name', 'School / account email', 'City', 'Educator eligibility', 'Event response', 'Registration date'].map(csvCell).join(',')]
+      for (const row of result.rows) lines.push([row.full_name,row.email,row.city,row.is_verified ? 'Verified' : 'Not verified','Registered only',new Date(row.registered_at).toISOString()].map(csvCell).join(','))
+      return reply.header('Content-Disposition', 'attachment; filename="registered-only.csv"').header('Cache-Control', 'no-store').type('text/csv; charset=utf-8').send('\uFEFF' + lines.join('\r\n'))
+    }
+    const totals = await db.query(`SELECT count(*)::int members FROM users u ${where}`, [search])
+    return reply.header('Cache-Control', 'no-store').send({ registrations: result.rows, totals: totals.rows[0], page, pageSize: 100 })
+  })
+
   app.post('/api/deals/:id/interest', { config: { rateLimit: { max: 20, timeWindow: '15 minutes' } } }, async (request, reply) => {
     const user = requireVerified(request)
     const params = z.object({ id: z.string().min(1).max(100) }).safeParse(request.params)
