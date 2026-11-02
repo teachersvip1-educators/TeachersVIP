@@ -1889,16 +1889,19 @@ function Verify({
   user,
 
   refresh,
+  onSignOut,
 }: {
   user: SessionUser
 
   refresh: RefreshSession
+  onSignOut: () => Promise<void>
 }) {
   const [params] = useSearchParams(),
     navigate = useNavigate(),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
-    [devUrl, setDevUrl] = useState(params.get("devVerificationUrl") || "")
+    [devUrl, setDevUrl] = useState(params.get("devVerificationUrl") || ""),
+    [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
     const token = params.get("token")
@@ -1950,6 +1953,16 @@ function Verify({
   return (
     <Page title={user.verification_status === "manual_review" ? "Educator Verification Pending" : "Verify Your Email Address"} narrow>
       <div className="verify-panel">
+        <button className="action action-soft" disabled={signingOut} onClick={async () => {
+          setError("")
+          setSigningOut(true)
+          try { await onSignOut() } catch {
+            setError("Could not sign out. Please check your connection and try again.")
+            setSigningOut(false)
+          }
+        }}>
+          {signingOut ? "Signing out…" : "Sign out and return to home"}
+        </button>
         <div className="shield large">✓</div>
         <p>
           {user.verification_status === "manual_review" ? (
@@ -1990,7 +2003,10 @@ function Verify({
           </form>
         )}
         {user.verification_status === "manual_review" && <div className="form-grid">
-          <Button onClick={() => void refresh().then((nextUser) => { if (nextUser?.verified) navigate('/youre-on-the-list', { replace: true }) })}>Check verification status</Button>
+          <Button onClick={() => void refresh().then((nextUser) => {
+            if (nextUser?.verified) navigate('/youre-on-the-list', { replace: true })
+            else if (nextUser) setMessage("Your verification is still under review.")
+          })}>Check verification status</Button>
         </div>}
         <small>
           Your email address is used to confirm ownership. Only K-12 educators
@@ -7148,12 +7164,12 @@ function AppRoutes() {
     refresh().finally(() => setLoading(false))
   }, [refresh])
 
-  const signOut = async () => {
+  const signOut = async (destination = "/sign-in") => {
     await post("/auth/sign-out")
 
     setUser(null)
 
-    navigate("/sign-in")
+    navigate(destination, { replace: true })
   }
 
   if (loading)
@@ -7193,12 +7209,12 @@ function AppRoutes() {
   }
 
   return user ? (
-    <Shell user={user} onSignOut={signOut}>
+    <Shell user={user} onSignOut={() => signOut()}>
       <Routes>
         <Route path="/sign-in" element={<Navigate to={user.is_demo ? '/deals' : rsvpReturnDestination(routeLocation.search) || pendingOfferDestination()} replace />} />
         <Route
           path="/verify"
-          element={<Verify user={user} refresh={refresh} />}
+          element={<Verify user={user} refresh={refresh} onSignOut={() => signOut("/")} />}
         />
         <Route path="/deals" element={<Discover user={user} />} />
         <Route
@@ -7213,7 +7229,7 @@ function AppRoutes() {
         />
         <Route
           path="/profile"
-          element={user.is_demo ? <Page title="Demo Preview"><p>Shared preview account: {user.personal_email}</p><p>Educators can manage their personal information, email preferences and membership here.</p><Button onClick={() => void signOut()}>Sign out</Button></Page> : <ActivationProfilePage onSignOut={signOut} refresh={refresh} />}
+          element={user.is_demo ? <Page title="Demo Preview"><p>Shared preview account: {user.personal_email}</p><p>Educators can manage their personal information, email preferences and membership here.</p><Button onClick={() => void signOut()}>Sign out</Button></Page> : <ActivationProfilePage onSignOut={() => signOut()} refresh={refresh} />}
         />
         <Route path="/support" element={<ActivationSupport />} />
         <Route path="/contact" element={<ContactPage embedded />} />
