@@ -50,6 +50,11 @@ const usCitySchema = z.string().trim().min(2).max(100).transform((value, ctx) =>
   return z.NEVER
 })
 const offersEmailSchema = z.email().max(254).transform(value => value.toLowerCase()).nullable().optional()
+function safeMemberReturnTo(value: unknown) {
+  if (typeof value !== 'string') return '/vip-card'
+  if (value === '/vip-card' || /^\/deals\/[a-z0-9][a-z0-9-]*$/i.test(value) || /^\/rsvp\/[a-f0-9-]{36}$/i.test(value)) return value
+  return '/vip-card'
+}
 const allowedAnalytics = new Set([
   "business_listing_view",
   "deal_view",
@@ -151,7 +156,8 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 
 function verificationEmailHtml(verificationUrl: string) {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#eef2f7;font-family:Arial,sans-serif;color:#0f172a"><div style="display:none;max-height:0;overflow:hidden">Verify your email address to unlock TeachersVIP deals and your personalized VIP card.</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef2f7"><tr><td align="center" style="padding:32px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;overflow:hidden;border-radius:24px;background:#ffffff;box-shadow:0 18px 48px rgba(6,16,30,.16)"><tr><td align="center" style="padding:30px 24px 25px;background:#06101e;border-bottom:4px solid #d4af37"><img src="cid:teachersvip-logo" width="92" alt="TeachersVIP" style="display:block;width:92px;max-width:100%;height:auto;margin:0 auto 13px"><div style="font-size:25px;font-weight:800;letter-spacing:-.5px;color:#ffffff">Teachers<span style="color:#d4af37">VIP</span></div><div style="margin-top:7px;font-size:11px;font-weight:700;letter-spacing:1.6px;color:#f5d061;text-transform:uppercase">Exclusive educator perks</div></td></tr><tr><td style="padding:38px 34px 32px"><div style="font-size:12px;font-weight:800;letter-spacing:1.4px;color:#8a6d1a;text-transform:uppercase">One quick step</div><h1 style="margin:8px 0 14px;font-size:30px;line-height:1.15;color:#06101e">Verify your email address</h1><p style="margin:0 0 24px;font-size:16px;line-height:1.65;color:#526174">Confirm this email address to continue to your personalized TeachersVIP card and educator-only offers.</p><table role="presentation" cellspacing="0" cellpadding="0" width="100%"><tr><td align="center" bgcolor="#d4af37" style="border-radius:999px"><a href="${verificationUrl}" style="display:block;padding:16px 24px;color:#06101e;font-size:16px;font-weight:800;text-decoration:none">Verify email address</a></td></tr></table><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;border-radius:14px;background:#f8fafc"><tr><td style="padding:16px 18px;font-size:13px;line-height:1.55;color:#526174"><strong style="color:#06101e">This link expires in 30 minutes.</strong><br>Your email address is used for account ownership confirmation.</td></tr></table><p style="margin:24px 0 7px;font-size:12px;line-height:1.5;color:#718096">If the button does not work, copy and paste this link into your browser:</p><p style="margin:0;word-break:break-all;font-size:11px;line-height:1.5;color:#8a6d1a"><a href="${verificationUrl}" style="color:#8a6d1a">${verificationUrl}</a></p></td></tr><tr><td align="center" style="padding:22px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#718096">If you did not request this email, you can safely ignore it.<br><strong style="color:#06101e">Free for educators. Always.</strong></td></tr></table></td></tr></table></body></html>`
+  const emailUrl = verificationUrl.replaceAll('&', '&amp;')
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#eef2f7;font-family:Arial,sans-serif;color:#0f172a"><div style="display:none;max-height:0;overflow:hidden">Verify your email address for your TeachersVIP account.</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef2f7"><tr><td align="center" style="padding:32px 14px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;overflow:hidden;border-radius:24px;background:#ffffff;box-shadow:0 18px 48px rgba(6,16,30,.16)"><tr><td align="center" style="padding:30px 24px 25px;background:#06101e;border-bottom:4px solid #d4af37"><img src="cid:teachersvip-logo" width="92" alt="TeachersVIP" style="display:block;width:92px;max-width:100%;height:auto;margin:0 auto 13px"><div style="font-size:25px;font-weight:800;letter-spacing:-.5px;color:#ffffff">Teachers<span style="color:#d4af37">VIP</span></div><div style="margin-top:7px;font-size:11px;font-weight:700;letter-spacing:1.6px;color:#f5d061;text-transform:uppercase">Exclusive educator perks</div></td></tr><tr><td style="padding:38px 34px 32px"><div style="font-size:12px;font-weight:800;letter-spacing:1.4px;color:#8a6d1a;text-transform:uppercase">One quick step</div><h1 style="margin:8px 0 14px;font-size:30px;line-height:1.15;color:#06101e">Verify your email address</h1><p style="margin:0 0 24px;font-size:16px;line-height:1.65;color:#526174">Confirm email ownership. We’ll then verify educator eligibility. If your address needs manual review, access stays locked until an administrator approves you.</p><table role="presentation" cellspacing="0" cellpadding="0" width="100%"><tr><td align="center" bgcolor="#d4af37" style="border-radius:999px"><a href="${emailUrl}" style="display:block;padding:16px 24px;color:#06101e;font-size:16px;font-weight:800;text-decoration:none">Verify email address</a></td></tr></table><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;border-radius:14px;background:#f8fafc"><tr><td style="padding:16px 18px;font-size:13px;line-height:1.55;color:#526174"><strong style="color:#06101e">This link expires in 30 minutes.</strong><br>Your email address is used to confirm account ownership.</td></tr></table><p style="margin:24px 0 7px;font-size:12px;line-height:1.5;color:#718096">If the button does not work, copy and paste this link into your browser:</p><p style="margin:0;word-break:break-all;font-size:11px;line-height:1.5;color:#8a6d1a"><a href="${emailUrl}" style="color:#8a6d1a">${emailUrl}</a></p></td></tr><tr><td align="center" style="padding:22px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;line-height:1.6;color:#718096">If you did not request this email, you can safely ignore it.<br><strong style="color:#06101e">Free for educators. Always.</strong></td></tr></table></td></tr></table></body></html>`
 }
 
 function passwordResetEmailHtml(resetUrl: string) {
@@ -368,6 +374,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     request: FastifyRequest,
     userId: string,
     schoolEmail: string,
+    returnTo: unknown = '/vip-card',
   ) => {
     requireVerificationEmailDelivery()
     const token = randomToken()
@@ -390,7 +397,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       `INSERT INTO educator_verification_audits(id,case_id,actor_user_id,event_type,previous_status,next_status) VALUES($1,$2,$3,'email_sent','email_pending','email_pending')`,
       [randomUUID(), activeCase.rows[0].id, userId],
     )
-    const verificationUrl = `${publicOrigin(request)}/verify?token=${encodeURIComponent(token)}`
+    const verificationUrl = `${publicOrigin(request)}/verify?token=${encodeURIComponent(token)}&returnTo=${encodeURIComponent(safeMemberReturnTo(returnTo))}`
     if (resend) {
       const emailLogo = readFileSync(
         path.resolve(
@@ -403,7 +410,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         to: schoolEmail,
         subject: "Verify your TeachersVIP school email",
         html: verificationEmailHtml(verificationUrl),
-        text: `Verify your school email\n\nConfirm your email to continue to your personalized TeachersVIP card and educator-only offers. This secure link expires in 30 minutes:\n\n${verificationUrl}\n\nIf you did not request this email, you can safely ignore it.\n\nFree for educators. Always.`,
+        text: `Verify your TeachersVIP email\n\nConfirm email ownership. We’ll then verify educator eligibility. If your address needs manual review, access stays locked until an administrator approves you. This secure link expires in 30 minutes:\n\n${verificationUrl}\n\nIf you did not request this email, you can safely ignore it.\n\nFree for educators. Always.`,
         attachments: [
           {
             filename: "teachersvip-logo.png",
@@ -653,6 +660,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           firstName: z.string().trim().min(2).max(80),
           lastName: z.string().trim().min(2).max(80),
           schoolEmail: z.email().transform((v) => v.toLowerCase()),
+          returnTo: z.string().max(200).optional(),
           offersEmail: offersEmailSchema,
           mobile: z.string().trim().max(30).optional(),
           city: usCitySchema,
@@ -716,6 +724,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         request,
         id,
         body.schoolEmail,
+        body.returnTo,
       )
       if (resend && config.RESEND_TO_EMAIL) {
         const { error } = await resend.emails.send({
@@ -1060,7 +1069,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       ),
       optionalQuery(
         db.query(
-          `SELECT c.id,c.work_email email,c.selected_role role,c.normalized_domain domain,c.status,array_to_string(c.reason_codes,', ') reason,d.classification,i.source_code source FROM educator_verification_cases c LEFT JOIN educator_domains d ON d.id=c.domain_id LEFT JOIN education_institutions i ON i.id=c.institution_id WHERE c.status IN ('email_pending','manual_review') ORDER BY c.created_at ASC`,
+          `SELECT c.id,c.work_email email,c.selected_role role,c.normalized_domain domain,c.status,array_to_string(c.reason_codes,', ') reason,d.classification,i.source_code source FROM educator_verification_cases c LEFT JOIN educator_domains d ON d.id=c.domain_id LEFT JOIN education_institutions i ON i.id=c.institution_id WHERE c.status='manual_review' AND c.email_verified_at IS NOT NULL ORDER BY c.created_at ASC`,
         ),
         { rows: [] } as { rows: unknown[] },
       ),
@@ -1340,8 +1349,22 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       FROM educator_verification_cases c JOIN users u ON u.id=c.user_id
       LEFT JOIN education_institutions i ON i.id=c.institution_id LEFT JOIN educator_domains d ON d.id=c.domain_id
       LEFT JOIN wallet_passes w ON w.user_id=c.user_id AND w.provider='pass2u'
-      WHERE c.status IN ('email_pending','manual_review','rejected','suspended') ORDER BY CASE c.status WHEN 'manual_review' THEN 0 ELSE 1 END,c.created_at ASC`)
+      WHERE c.status='manual_review' AND c.email_verified_at IS NOT NULL ORDER BY c.created_at ASC`)
     return { cases: result.rows }
+  })
+
+  app.get("/api/admin/educators", async (request, reply) => {
+    requireSuperadmin(request)
+    const query = parse(z.object({ search: z.string().trim().max(150).default(''), page: z.coerce.number().int().min(1).default(1) }), request.query)
+    const where = `WHERE u.educator_verified_at IS NOT NULL AND NOT u.is_demo AND NOT u.is_superadmin
+      AND ($1::text='' OR position(lower($1) in lower(concat_ws(' ',u.first_name,u.last_name,u.work_email,u.personal_email,m.member_id,u.city)))>0)`
+    const [educators, totals] = await Promise.all([
+      db.query(`SELECT u.id,concat_ws(' ',u.first_name,u.last_name) full_name,COALESCE(u.work_email,u.personal_email) email,m.member_id,u.city,u.educator_verified_at verified_at
+        FROM users u LEFT JOIN member_cards m ON m.user_id=u.id ${where}
+        ORDER BY u.educator_verified_at DESC,u.id LIMIT 50 OFFSET $2`, [query.search, (query.page - 1) * 50]),
+      db.query(`SELECT count(*)::int educators FROM users u LEFT JOIN member_cards m ON m.user_id=u.id ${where}`, [query.search]),
+    ])
+    return reply.header('Cache-Control', 'no-store').send({ educators: educators.rows, totals: totals.rows[0], page: query.page, pageSize: 50 })
   })
 
   app.get("/api/admin/domains", async (request) => {
@@ -1382,9 +1405,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         throw Object.assign(new Error("Verification case not found."), {
           statusCode: 404,
         })
-      if (!["email_pending", "manual_review"].includes(verificationCase.status))
+      if (verificationCase.status !== "manual_review")
         throw Object.assign(
-          new Error("This verification case has already been decided."),
+          new Error("Confirm the educator email before reviewing eligibility."),
           { statusCode: 409 },
         )
       userId = verificationCase.user_id
@@ -2358,10 +2381,12 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     { config: { rateLimit: { max: 4, timeWindow: "15 minutes" } } },
     async (request) => {
       const user = requireUser(request)
+      const body = parse(z.object({ returnTo: z.string().max(200).optional() }).default({}), request.body)
       const verificationUrl = await sendEducatorVerification(
         request,
         user.id,
         user.personal_email,
+        body.returnTo,
       )
       return { ok: true, ...(!resend ? { verificationUrl } : {}) }
     },
@@ -2622,7 +2647,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const { id } = parse(z.object({ id: z.string() }), request.params)
     const result = await db.query(
       `SELECT d.id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.starts_at,d.ends_at,d.usage_limit_count,d.usage_limit_period,d.redemption_method AS "redemptionMethod",
-      d.cta_type,d.event_name,d.event_date_time,d.event_location,EXISTS(SELECT 1 FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2) interest_submitted,
+      d.cta_type,d.event_name,d.event_date_time,d.event_location,EXISTS(SELECT 1 FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2 AND s.cta_type=d.cta_type) interest_submitted,
       (SELECT s.id FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2 AND s.cta_type='rsvp') rsvp_id,
       b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.opening_hours,b.hours_timezone,b.address,b.latitude,b.longitude,
       COALESCE((SELECT json_agg(json_build_object('id',bl.id,'name',bl.location_name,'address',COALESCE(bl.address,b.address),'latitude',bl.latitude,'longitude',bl.longitude,'radiusMeters',bl.geofence_radius_m,'timezone',bl.timezone) ORDER BY bl.location_name,bl.id)

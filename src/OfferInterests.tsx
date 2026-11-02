@@ -27,8 +27,11 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
   useEffect(() => {
     if (submitted) confirmationRef.current?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   }, [submitted])
-  const isBattersOpening = deal.id === 'batters-brunch-grand-opening'
-  const label = isBattersOpening ? 'Receive Your Invitation' : OFFER_CTA_LABELS[deal.cta_type || 'join_waitlist']
+  const isRsvp = deal.cta_type === 'rsvp'
+  const eventReturnTo = `/deals/${encodeURIComponent(deal.id)}`
+  const createAccountPath = `/create-account?returnTo=${encodeURIComponent(eventReturnTo)}`
+  const signInPath = `/sign-in?returnTo=${encodeURIComponent(eventReturnTo)}`
+  const label = OFFER_CTA_LABELS[deal.cta_type || 'join_waitlist']
   const submit = async () => {
     setBusy(true); setError('')
     try {
@@ -48,7 +51,7 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       <div className="tags"><span>{label}</span></div>
       <h2>{deal.event_name || deal.title}</h2>
       <p>{deal.description}</p>
-      <div className="restriction"><b>{isBattersOpening ? 'Educator Soft Opening' : 'Event and offer details'}</b><span>{deal.restrictions}</span></div>
+      <div className="restriction"><b>{isRsvp ? 'Event RSVP' : 'Event and offer details'}</b><span>{deal.restrictions}</span></div>
       {deal.cta_type === 'rsvp' && <p><strong>Date and time:</strong> {deal.event_date_time || 'To be announced'}<br /><strong>Location:</strong> {deal.event_location || 'To be announced'}</p>}
       {error && <div className="notice notice-error" role="alert">{error}</div>}
       {submitted ? <div ref={confirmationRef} className="notice notice-success" role="status">
@@ -59,13 +62,14 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       </div> : user?.is_demo ? <p>Demo preview: verified educators can RSVP here and receive an immediate thank-you and confirmation.</p> : user?.verified ? <>
         <p id="interest-consent" className="interest-consent">Clicking {label} shares your member ID, name and email with the TeachersVIP admin team for this event.</p>
       </> : <>
-        <p>{isBattersOpening ? 'Sign up and verify your educator eligibility to receive the invite.' : 'Sign up and verify your educator eligibility before registering interest.'}</p>
-        {!user && <Link className="back-link" to="/sign-in" onClick={() => rememberOffer(deal.id)}>Already a member? Sign In</Link>}
+        <p>{isRsvp ? 'Sign in or create a free account, verify your educator eligibility, then confirm your RSVP here. You are not added to the RSVP list until you confirm.' : 'Sign up and verify your educator eligibility before registering interest.'}</p>
+        {!user && <Link className="back-link" to={signInPath} onClick={() => rememberOffer(deal.id)}>{isRsvp ? 'Already a member? Sign in to register' : 'Already a member? Sign In'}</Link>}
+        {!user && isRsvp && <Link className="back-link" to={createAccountPath} onClick={() => rememberOffer(deal.id)}>New to TeachersVIP? Create an account to RSVP</Link>}
       </>}
       <div className="deal-sticky-action">
         {submitted ? <span className="action action-gold">{deal.cta_type === 'rsvp' ? 'RSVP confirmed' : 'Interest saved'}</span> : user?.is_demo ? <span className="action action-soft">Read-only preview</span> : user?.verified ?
           <button className="action action-gold" aria-describedby="interest-consent" disabled={busy} onClick={() => void submit()}>{busy ? 'Saving your interest…' : label}</button> :
-          <Link className="action action-gold" to={user ? '/verify' : '/create-account'} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : `Sign up to ${label}`}</Link>}
+          <Link className="action action-gold" to={user ? `/verify?returnTo=${encodeURIComponent(eventReturnTo)}` : createAccountPath} onClick={() => rememberOffer(deal.id)}>{user ? 'Verify to continue' : isRsvp ? 'Sign up to RSVP' : `Sign up to ${label}`}</Link>}
       </div>
     </div>
   </section>
@@ -199,7 +203,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
     setSearchParams(next, { replace: true })
   }
   const [businessId, setBusinessId] = useState('')
-  const [responseType, setResponseType] = useState('')
+  const [responseType, setResponseType] = useState(rsvpsOnly ? 'rsvp' : '')
   const ctaFilter: Record<string, string> = invitesOnly ? { ctaType: 'get_launch_invite' } : rsvpsOnly ? { scope: 'events', ...(responseType ? { ctaType: responseType } : {}) } : {}
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState(false)
@@ -251,8 +255,8 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
   ]
   return <section className={`admin-card admin-table-card offer-interests${rsvpsOnly ? ' event-responses' : ''}`} aria-busy={loading}>
     <div className="admin-card-heading"><div>
-      <h2>{rsvpsOnly ? 'RSVPs & invitations' : invitesOnly ? 'Invite Requests' : 'Interested educators'}</h2>
-      <p>{rsvpsOnly ? 'Saved event responses, including older signups. RSVP confirmed means the educator submitted an RSVP; invitation requests and waitlist signups remain separate. This list does not approve educator eligibility. Use Educators for that review.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
+      <h2>{rsvpsOnly ? responseType === 'rsvp' ? 'Confirmed RSVPs' : responseType ? 'Other event responses' : 'All event responses' : invitesOnly ? 'Invite Requests' : 'Interested educators'}</h2>
+      <p>{rsvpsOnly ? 'This list defaults to educators who completed and confirmed an RSVP. Invitation requests and waitlist signups are separate response types and never count as confirmed RSVPs. Educator approval is managed under Educators.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
       {!rsvpsOnly && <Link className="back-link" to="/admin/rsvps">Open RSVPs & invitations</Link>}
       {rsvpsOnly && <a className="back-link" href="#registered-only">Find a registered member without an event response</a>}
     </div></div>
@@ -270,7 +274,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
         {dealId && !offers.some(offer => offer.id === dealId) && <option value={dealId}>{dealId === 'batters-brunch-grand-opening' ? 'Batters & Brunch · Grand Opening' : 'Selected event'}</option>}
         {offers.filter(offer => !businessId || offer.business_id === businessId).map(offer => <option key={offer.id} value={offer.id}>{offer.business_name} · {offer.event_name || offer.title} · {offer.interested} {rsvpsOnly ? 'responses' : 'interested'}</option>)}
       </select></label>
-      {rsvpsOnly && <label className="field"><span>Response</span><select value={responseType} onChange={event => { setResponseType(event.target.value); setPage(1) }}>
+      {rsvpsOnly && <label className="field"><span>Response type</span><select value={responseType} onChange={event => { setResponseType(event.target.value); setPage(1) }}>
         <option value="">All event responses</option>
         <option value="rsvp">RSVP confirmed</option>
         <option value="get_launch_invite">Invitation requested</option>
@@ -282,11 +286,11 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
     {rsvpsOnly && selectedOffer?.cta_type === 'get_launch_invite' && <div className="notice">This event is collecting invitation requests. An invitation request does not confirm attendance.</div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
     {loading ? <p role="status">{rsvpsOnly ? 'Loading event responses…' : 'Loading interested educators…'}</p> : data && <>
-      <div className="interest-totals" role="status"><strong>{data.totals.educators} {rsvpsOnly ? 'educators responded' : 'total interested educators'}</strong><span>{data.totals.submissions} {rsvpsOnly ? responseType === 'rsvp' ? 'confirmed RSVPs' : responseType === 'get_launch_invite' ? 'invitation requests' : responseType === 'join_waitlist' ? 'waitlist signups' : 'event responses' : 'event submissions'}</span></div>
+      <div className="interest-totals" role="status"><strong>{data.totals.educators} {rsvpsOnly ? responseType === 'rsvp' ? 'educators RSVP’d' : 'educators responded' : 'total interested educators'}</strong><span>{data.totals.submissions} {rsvpsOnly ? responseType === 'rsvp' ? 'confirmed RSVPs' : responseType === 'get_launch_invite' ? 'invitation requests' : responseType === 'join_waitlist' ? 'waitlist signups' : 'event responses' : 'event submissions'}</span></div>
       {data.submissions.length ? <div className="interest-table-scroll" tabIndex={0} role="region" aria-label={rsvpsOnly ? 'Event responses list' : 'Interested educators list'}><table className="interest-table">
         <thead><tr>{columns.map(column => <th scope="col" key={column.key}>{column.label}</th>)}</tr></thead>
         <tbody>{data.submissions.map(row => <tr key={row.id}>{columns.map(column => <td key={column.key} data-label={column.label}><span>{column.key === 'cta_type' ? (rsvpsOnly ? OFFER_RESPONSE_LABELS : OFFER_CTA_LABELS)[row.cta_type] : column.key === 'submitted_at' ? new Date(row.submitted_at).toLocaleString() : row[column.key]}</span></td>)}</tr>)}</tbody>
-      </table></div> : <p className="admin-empty">{rsvpsOnly ? 'No saved event responses match these filters. Responses appear after an educator submits an RSVP, invitation request or event waitlist signup.' : 'No interested educators for this selection yet.'}</p>}
+      </table></div> : <p className="admin-empty">{rsvpsOnly ? responseType === 'rsvp' ? 'No confirmed RSVPs match these filters yet.' : 'No event responses match these filters yet.' : 'No interested educators for this selection yet.'}</p>}
       {data.totals.submissions > data.pageSize && <div className="interest-pagination"><button type="button" className="action action-soft" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.totals.submissions / data.pageSize)}</span><button type="button" className="action action-soft" disabled={page * data.pageSize >= data.totals.submissions} onClick={() => setPage(value => value + 1)}>Next</button></div>}
     </>}
   </section>

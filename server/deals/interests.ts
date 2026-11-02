@@ -60,7 +60,9 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
        CROSS JOIN deals d JOIN businesses b ON b.id=d.business_id
        WHERE u.id=$2 AND u.educator_verified_at IS NOT NULL AND d.id=$3 AND d.cta_type<>'use_deal' AND d.published AND b.published
        AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())
-       ON CONFLICT(user_id,deal_id) DO NOTHING RETURNING id,submitted_at,cta_type,email,event_name,business_name,deal_id`, [randomUUID(), user.id, id],
+       ON CONFLICT(user_id,deal_id) DO UPDATE SET cta_type=EXCLUDED.cta_type,member_id=EXCLUDED.member_id,full_name=EXCLUDED.full_name,email=EXCLUDED.email,business_name=EXCLUDED.business_name,event_name=EXCLUDED.event_name,submitted_at=now()
+       WHERE EXCLUDED.cta_type='rsvp' AND offer_interest_submissions.cta_type<>'rsvp'
+       RETURNING id,submitted_at,cta_type,email,event_name,business_name,deal_id`, [randomUUID(), user.id, id],
     )
     const existing = inserted.rows[0] ?? (await db.query(
       'SELECT id,submitted_at FROM offer_interest_submissions WHERE user_id=$1 AND deal_id=$2', [user.id, id],

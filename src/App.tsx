@@ -1,4 +1,5 @@
 import { AdminBusiness } from "./AdminBusiness"
+import { AdminApprovedEducators } from "./AdminEducators"
 import {
   useCallback,
   useEffect,
@@ -1487,8 +1488,11 @@ function ProfileCity({ initialCity }: { initialCity: string }) {
 }
 
 function Register({ refresh }: { refresh: RefreshSession }) {
+  const location = useLocation()
+  const returnTo = requestedMemberDestination(location.search) || '/vip-card'
   const [city, setCity] = useState(""),
     [error, setError] = useState(""),
+    [existingAccount, setExistingAccount] = useState(false),
     [busy, setBusy] = useState(false)
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1497,6 +1501,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
     setBusy(true)
 
     setError("")
+    setExistingAccount(false)
 
     const data = new FormData(event.currentTarget)
 
@@ -1512,6 +1517,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           workEmail: data.get("workEmail"),
 
           schoolEmail: data.get("workEmail"),
+          returnTo,
           offersEmail: data.get('usePersonalEmail') === 'on' ? data.get('offersEmail') : null,
 
           role: data.get("role"),
@@ -1530,13 +1536,12 @@ function Register({ refresh }: { refresh: RefreshSession }) {
 
       await refresh()
 
-      const devLink = result.verificationUrl
-        ? `?devVerificationUrl=${encodeURIComponent(result.verificationUrl)}`
-        : ""
-
-      window.location.assign(`/verify${devLink}`)
+      const verifyParams = new URLSearchParams({ returnTo })
+      if (result.verificationUrl) verifyParams.set('devVerificationUrl', result.verificationUrl)
+      window.location.assign(`/verify?${verifyParams}`)
     } catch (e) {
       setError((e as Error).message)
+      setExistingAccount(e instanceof ApiError && e.status === 409)
     } finally {
       setBusy(false)
     }
@@ -1559,8 +1564,7 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           required
         />
         <p className="notice">
-          Verify your email to create your account. We’ll separately confirm your
-          educator eligibility before you can RSVP or access offers.
+          We’ll email a verification link. Approved work email domains are verified automatically; personal or unrecognized domains need educator review. {returnTo.startsWith('/deals/') ? 'After approval, you’ll return to this event to confirm your RSVP.' : 'After approval, you’ll go to your digital card.'}
         </p>
         <PersonalOffersEmail />
         <label className="field">
@@ -1589,12 +1593,13 @@ function Register({ refresh }: { refresh: RefreshSession }) {
           minLength={8}
         />
         {error && <Notice kind="error">{error}</Notice>}
+        {existingAccount && <Link className="back-link" to={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>Sign in to continue with this {returnTo.startsWith('/deals/') ? 'event' : 'account'}</Link>}
         <Button type="submit" disabled={busy}>
-          {busy ? "Creating account…" : "Continue to Verification"}
+          {busy ? "Creating account…" : "Join Free"}
         </Button>
       </form>
       <p className="switch">
-        Already have an account? <Link to="/sign-in">Sign In</Link>
+        Already have an account? <Link to={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>Sign In</Link>
       </p>
     </AuthFrame>
   )
@@ -1706,13 +1711,16 @@ function AdminRegister({ refresh }: { refresh: RefreshSession }) {
   )
 }
 
-function rsvpReturnDestination(search: string) {
-  const path = new URLSearchParams(search).get('returnTo')
-  return path && /^\/rsvp\/[a-f0-9-]{36}$/i.test(path) ? path : null
+function memberReturnDestination(path: string | null | undefined) {
+  return path && (path === '/vip-card' || /^\/deals\/[a-z0-9][a-z0-9-]*$/i.test(path) || /^\/rsvp\/[a-f0-9-]{36}$/i.test(path)) ? path : null
+}
+
+function requestedMemberDestination(search: string) {
+  return memberReturnDestination(new URLSearchParams(search).get('returnTo'))
 }
 
 function SignIn({ refresh }: { refresh: RefreshSession }) {
-  const returnTo = rsvpReturnDestination(useLocation().search)
+  const returnTo = requestedMemberDestination(useLocation().search)
   const navigate = useNavigate(),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false)
@@ -1733,7 +1741,7 @@ function SignIn({ refresh }: { refresh: RefreshSession }) {
 
       const nextUser = await refresh()
 
-      navigate(nextUser?.is_demo ? '/deals' : nextUser?.verified ? (returnTo || pendingOfferDestination()) : "/verify")
+      navigate(nextUser?.is_demo ? '/deals' : nextUser?.verified ? (returnTo || pendingOfferDestination()) : `/verify?returnTo=${encodeURIComponent(returnTo || '/vip-card')}`)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -1758,7 +1766,7 @@ function SignIn({ refresh }: { refresh: RefreshSession }) {
         </Button>
       </form>
       <p className="switch">
-        New to TeachersVIP? <Link to="/create-account">Create Account</Link>
+        New to TeachersVIP? <Link to={`/create-account?returnTo=${encodeURIComponent(returnTo || '/vip-card')}`}>Create Account</Link>
       </p>
     </AuthFrame>
   )
@@ -1899,6 +1907,7 @@ function Verify({
 }) {
   const [params] = useSearchParams(),
     navigate = useNavigate(),
+    returnTo = memberReturnDestination(params.get("returnTo")) || "/vip-card",
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [devUrl, setDevUrl] = useState(params.get("devVerificationUrl") || ""),
@@ -1914,8 +1923,8 @@ function Verify({
     try {
       const nextUser = await refresh()
       if (nextUser?.verified) {
-        setMessage("Your educator eligibility is approved. Returning you to your event…")
-        navigate(pendingOfferDestination(), { replace: true })
+        setMessage("Your educator eligibility is approved. Taking you to the next step…")
+        navigate(returnTo, { replace: true })
       } else if (showPendingMessage && nextUser) {
         setMessage("Your verification is still under review. We’ll move you into TeachersVIP automatically as soon as it’s approved.")
       } else if (showPendingMessage) {
@@ -1925,7 +1934,7 @@ function Verify({
       checkingStatusRef.current = false
       setCheckingStatus(false)
     }
-  }, [navigate, refresh])
+  }, [navigate, refresh, returnTo])
 
   useEffect(() => {
     if (user.verification_status !== "manual_review") return
@@ -1956,17 +1965,17 @@ function Verify({
         const nextUser = await refresh()
 
         if (result.status === "verified" && nextUser?.verified) {
-          navigate("/youre-on-the-list", { replace: true })
+          navigate(returnTo, { replace: true })
         } else {
           setMessage(
-            "Your email is confirmed. Your educator eligibility is now in manual review.",
+            `Your email is verified. Educator approval is pending. We’ll take you to ${returnTo.startsWith('/deals/') ? 'the event so you can confirm your RSVP' : returnTo === '/vip-card' ? 'your digital card' : 'your requested page'} when it’s approved.`,
           )
-          navigate("/verify", { replace: true })
+          navigate(`/verify?returnTo=${encodeURIComponent(returnTo)}`, { replace: true })
         }
       })
 
       .catch((e) => setError(e.message))
-  }, [params, navigate, refresh])
+  }, [params, navigate, refresh, returnTo])
 
   const send = async (event: FormEvent) => {
     event.preventDefault()
@@ -1977,7 +1986,7 @@ function Verify({
       const result = await post<{ ok: boolean; verificationUrl?: string }>(
         "/verification/send",
 
-        {},
+        { returnTo },
       )
 
       setMessage(
@@ -2009,9 +2018,7 @@ function Verify({
             <>
               Your email ownership is confirmed for{" "}
               <strong>{user.work_email || user.personal_email}</strong>. Your
-              educator eligibility is in manual review. You can RSVP and access
-              educator offers once your eligibility is approved. Check your
-              status here while you wait.
+              educator eligibility is in manual review. We’ll take you to {returnTo.startsWith('/deals/') ? 'your event so you can confirm your RSVP' : returnTo === '/vip-card' ? 'your digital educator card' : 'your requested page'} as soon as it’s approved. Until then, event RSVPs and educator offers are locked.
             </>
           ) : user.verification_status === "rejected" ? (
             <>
@@ -2047,7 +2054,7 @@ function Verify({
             setError("")
             void checkStatus(true)
           }}>{checkingStatus ? "Checking status…" : "Check verification status"}</Button>
-          <small role="status">This page checks for approval automatically. You can leave it open; it will continue to your event when educator access is ready.</small>
+          <small role="status">This page checks for approval automatically. You can leave it open; it will continue to the next step when educator access is ready.</small>
         </div>}
         <small>
           Your email address is used to confirm ownership. Only K-12 educators
@@ -2126,7 +2133,8 @@ function VerifiedWaitlist() {
 
 function PublicVerify() {
   const [params] = useSearchParams(),
-    [error, setError] = useState("")
+    [error, setError] = useState(""),
+    returnTo = memberReturnDestination(params.get("returnTo")) || "/vip-card"
 
   const token = params.get("token")
 
@@ -2141,10 +2149,15 @@ function PublicVerify() {
       token,
     })
 
-      .then(() => window.location.replace("/sign-in"))
+      .then((result) => {
+        const nextPath = result.status === "verified"
+          ? returnTo
+          : `/verify?returnTo=${encodeURIComponent(returnTo)}`
+        window.location.replace(nextPath)
+      })
 
       .catch((e) => setError(e.message))
-  }, [token])
+  }, [token, returnTo])
 
   return (
     <AuthFrame
@@ -2154,7 +2167,7 @@ function PublicVerify() {
       {error ? (
         <>
           <Notice kind="error">{error}</Notice>
-          <Link className="action action-gold" to="/sign-in">
+          <Link className="action action-gold" to={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>
             Go to Sign In
           </Link>
         </>
@@ -6449,7 +6462,7 @@ function AdminOperationsPage({ view }: { view: string }) {
 
       setVerificationMessage(
         action === "approve"
-          ? `Educator eligibility approved for ${item.email}. Any event RSVP is unchanged; view it in RSVPs.`
+          ? `Educator eligibility approved for ${item.email}. The account is now listed under Educators; any event RSVP is unchanged.`
           : `Educator verification for ${item.email} ${
               action === "reject"
                 ? "rejected"
@@ -6583,17 +6596,17 @@ function AdminOperationsPage({ view }: { view: string }) {
           </section>
         </>
       )}
-      {view === "educators" && (
-        <>
-          <section className="admin-card admin-table-card">
+      {view === "educators" && <AdminApprovedEducators />}
+      {view === "verification-review" && (
+        <section className="admin-card admin-table-card">
             <div className="admin-card-heading">
               <ShieldCheck size={22} />
               <div>
-                <h2>Educator eligibility review</h2>
+                <h2>Pending educator eligibility reviews</h2>
                 <p>
-                  Shared university, unknown, and personal domains go to manual
-                  review. Approving here unlocks educator access; it does not approve or create an event RSVP. The same member can appear in both lists.
+                  These members have confirmed their email and need educator review. Approval unlocks educator access; it does not submit or approve an event RSVP. Approved accounts appear under Educators. An RSVP appears only after the member confirms it on the event page.
                 </p>
+                <Link className="back-link" to="/admin/educators">Open approved educators</Link>
                 <Link className="back-link" to="/admin/rsvps">Open event RSVPs</Link>
               </div>
             </div>
@@ -6668,7 +6681,6 @@ function AdminOperationsPage({ view }: { view: string }) {
               )}
             </div>
           </section>
-        </>
       )}
       {view === "activity" && (
         <>
@@ -7031,7 +7043,7 @@ function AdminRouter({ userId }: { userId: string }) {
     return <AdminPage key={view} userId={userId} view={view} />
 
   if (
-    ["educators", "activity", "reviews-reports", "creator-network"].includes(
+    ["educators", "verification-review", "activity", "reviews-reports", "creator-network"].includes(
       view,
     )
   )
@@ -7097,21 +7109,17 @@ function AppRoutes() {
     ].includes(routeLocation.pathname) &&
     !(user.verification_status !== "manual_review" && routeLocation.pathname === "/creator-network")
   )
-    return <Navigate to="/verify" replace />
+    return <Navigate to={`/verify?returnTo=${encodeURIComponent(routeLocation.pathname.startsWith('/deals/') ? routeLocation.pathname : '/vip-card')}`} replace />
 
   if (routeLocation.pathname === "/youre-on-the-list") {
     if (user?.is_superadmin) return <Navigate to="/admin" replace />
-    return user?.verified ? (
-      <VerifiedWaitlist />
-    ) : (
-      <Navigate to="/sign-in" replace />
-    )
+    return user?.verified ? <Navigate to="/vip-card" replace /> : <Navigate to="/verify?returnTo=%2Fvip-card" replace />
   }
 
   return user ? (
     <Shell user={user} onSignOut={() => signOut()}>
       <Routes>
-        <Route path="/sign-in" element={<Navigate to={user.is_demo ? '/deals' : rsvpReturnDestination(routeLocation.search) || pendingOfferDestination()} replace />} />
+        <Route path="/sign-in" element={<Navigate to={user.is_demo ? '/deals' : requestedMemberDestination(routeLocation.search) || pendingOfferDestination()} replace />} />
         <Route
           path="/verify"
           element={<Verify user={user} refresh={refresh} onSignOut={() => signOut("/")} />}
