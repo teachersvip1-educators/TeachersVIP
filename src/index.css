@@ -551,3 +551,22 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .admin-business-detail > h2 { margin: 18px 0 12px; font-size: 24px; } .admin-business-detail > h3 { margin: 24px 0 10px; font-weight: 700; } .admin-business-detail > p { margin: 10px 0; line-height: 1.6; } .admin-business-detail > ul { display: grid; gap: 6px; } .admin-business-detail > .admin-row-actions { margin-top: 20px; } .admin-business-image[hidden] { display: none; }
 
 .admin-offer-edit { border-top: 1px solid #e2e8f0; padding-top: 24px; margin-bottom: 24px; }
+
+/* Event responses become labelled rows on phones so names and emails stay visible. */
+.event-shortcuts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.event-shortcuts .action { width: auto; min-height: 44px; }
+.event-shortcuts .action[aria-pressed=true] { background: #10233e; color: #fff; }
+.event-responses .interest-table td:first-child { font-weight: 700; }
+.event-responses .interest-table-scroll:focus-visible { outline: 3px solid #b28b24; outline-offset: 3px; }
+@media (max-width: 640px) {
+  .event-responses .interest-list-tools .field { flex-basis: 100%; }
+  .event-responses .interest-table-scroll { border: 0; overflow: visible; }
+  .event-responses .interest-table, .event-responses .interest-table tbody { display: block; width: 100%; }
+  .event-responses .interest-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .event-responses .interest-table tr { display: block; margin-top: 12px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 12px; }
+  .event-responses .interest-table td { display: grid; grid-template-columns: minmax(80px, .65fr) minmax(0, 1.35fr); gap: 12px; min-width: 0; padding: 10px 0; font-size: 14px; line-height: 1.5; }
+  .event-responses .interest-table td::before { content: attr(data-label); color: #334155; font-weight: 650; }
+  .event-responses .interest-table td > span { min-width: 0; overflow-wrap: anywhere; }
+  .event-responses .interest-table td:last-child { border-bottom: 0; }
+  .event-responses .interest-pagination { flex-wrap: wrap; }
+}

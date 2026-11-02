@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { DbPool } from '../db/pool.js'
-import { OFFER_CTA_LABELS, type OfferCtaType } from '../../shared/offer-cta.js'
+import { OFFER_CTA_LABELS, OFFER_RESPONSE_LABELS, type OfferCtaType } from '../../shared/offer-cta.js'
 import type { RsvpConfirmation } from '../emails/rsvp-confirmation.js'
 
 export function csvCell(value: unknown): string {
@@ -68,26 +68,30 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
 
   app.get('/api/admin/offer-interests', async (request, reply) => {
     requireSuperadmin(request)
-    const parsed = z.object({ dealId: z.string().max(100).optional(), businessId: z.string().max(100).optional(), ctaType: z.enum(['join_waitlist', 'rsvp', 'get_launch_invite']).optional(), page: z.coerce.number().int().min(1).default(1), export: z.enum(['csv']).optional() }).safeParse(request.query)
+    const parsed = z.object({ dealId: z.string().max(100).optional(), businessId: z.string().max(100).optional(), ctaType: z.enum(['join_waitlist', 'rsvp', 'get_launch_invite']).optional(), scope: z.enum(['events']).optional(), page: z.coerce.number().int().min(1).default(1), export: z.enum(['csv']).optional() }).safeParse(request.query)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid interest-list filters.' })
-    const { dealId, businessId, ctaType, page, export: format } = parsed.data
+    const { dealId, businessId, ctaType, scope, page, export: format } = parsed.data
     const filter = dealId || null
     const filters = [filter, businessId || null, ctaType || null]
+    // Both the list and export read submitted event responses, never account
+    // registrations. Keep this predicate shared with totals to avoid drift.
+    const where = `WHERE ($1::text IS NULL OR deal_id=$1) AND ($2::text IS NULL OR business_id=$2) AND ($3::text IS NULL OR cta_type=$3)${scope === 'events' ? " AND cta_type IN ('rsvp','get_launch_invite')" : ''}`
     const submissions = await db.query(
       `SELECT id,deal_id,cta_type,member_id,full_name,email,business_name,event_name,submitted_at FROM offer_interest_submissions
-       WHERE ($1::text IS NULL OR deal_id=$1) AND ($2::text IS NULL OR business_id=$2) AND ($3::text IS NULL OR cta_type=$3) ORDER BY submitted_at DESC,id
+       ${where} ORDER BY submitted_at DESC,id
        ${format ? '' : 'LIMIT 100 OFFSET $4'}`, format ? filters : [...filters, (page - 1) * 100],
     )
     if (format) {
-      const lines = [['Member ID', 'Name', 'Email', 'Business', 'Event', 'CTA type', 'Submission date'].map(csvCell).join(',')]
-      for (const row of submissions.rows) lines.push([row.member_id, row.full_name, row.email, row.business_name, row.event_name, OFFER_CTA_LABELS[row.cta_type as OfferCtaType], new Date(row.submitted_at).toISOString()].map(csvCell).join(','))
-      return reply.header('Content-Disposition', 'attachment; filename="interested-educators.csv"').header('Cache-Control', 'no-store').type('text/csv; charset=utf-8').send('\uFEFF' + lines.join('\r\n'))
+      const lines = [['Member ID', 'Name', 'Email', 'Business', 'Event', scope === 'events' ? 'Response' : 'CTA type', 'Submission date'].map(csvCell).join(',')]
+      const labels = scope === 'events' ? OFFER_RESPONSE_LABELS : OFFER_CTA_LABELS
+      for (const row of submissions.rows) lines.push([row.member_id, row.full_name, row.email, row.business_name, row.event_name, labels[row.cta_type as OfferCtaType], new Date(row.submitted_at).toISOString()].map(csvCell).join(','))
+      return reply.header('Content-Disposition', `attachment; filename="${scope === 'events' ? 'event-rsvps' : 'interested-educators'}.csv"`).header('Cache-Control', 'no-store').type('text/csv; charset=utf-8').send('\uFEFF' + lines.join('\r\n'))
     }
     const [totals, offers] = await Promise.all([
-      db.query('SELECT count(*)::int submissions,count(DISTINCT user_id)::int educators FROM offer_interest_submissions WHERE ($1::text IS NULL OR deal_id=$1) AND ($2::text IS NULL OR business_id=$2) AND ($3::text IS NULL OR cta_type=$3)', filters),
+      db.query(`SELECT count(*)::int submissions,count(DISTINCT user_id)::int educators FROM offer_interest_submissions ${where}`, filters),
       db.query(`SELECT d.id,d.title,d.event_name,d.cta_type,b.id business_id,b.name business_name,count(s.id)::int interested
-                FROM deals d JOIN businesses b ON b.id=d.business_id LEFT JOIN offer_interest_submissions s ON s.deal_id=d.id AND ($1::text IS NULL OR s.cta_type=$1)
-                WHERE (($1::text IS NULL AND d.cta_type<>'use_deal') OR d.cta_type=$1 OR s.id IS NOT NULL) GROUP BY d.id,b.id ORDER BY d.created_at DESC`, [ctaType || null]),
+                FROM deals d JOIN businesses b ON b.id=d.business_id LEFT JOIN offer_interest_submissions s ON s.deal_id=d.id AND ($1::text IS NULL OR s.cta_type=$1)${scope === 'events' ? " AND s.cta_type IN ('rsvp','get_launch_invite')" : ''}
+                WHERE ${scope === 'events' ? "(d.cta_type IN ('rsvp','get_launch_invite') OR s.id IS NOT NULL)" : "(($1::text IS NULL AND d.cta_type<>'use_deal') OR d.cta_type=$1 OR s.id IS NOT NULL)"} GROUP BY d.id,b.id ORDER BY d.created_at DESC`, [ctaType || null]),
     ])
     return reply.header('Cache-Control', 'no-store').send({ submissions: submissions.rows, totals: totals.rows[0], offers: offers.rows, page, pageSize: 100 })
   })

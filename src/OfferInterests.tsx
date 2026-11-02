@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api, post, del } from './lib/api'
-import { OFFER_CTA_LABELS, type OfferCtaType } from '../shared/offer-cta'
+import { OFFER_CTA_LABELS, OFFER_RESPONSE_LABELS, type OfferCtaType } from '../shared/offer-cta'
 
 const pendingKey = 'teachersvip:pending-interest-offer'
 export function pendingOfferDestination() {
@@ -110,12 +110,21 @@ export function ManageRsvp({ user }: { user: { verified: boolean; is_demo?: bool
 type Submission = { id: string; deal_id: string; cta_type: OfferCtaType; member_id: string; full_name: string; email: string; business_name: string; event_name: string; submitted_at: string }
 type InterestData = { submissions: Submission[]; totals: { submissions: number; educators: number }; offers: { id: string; title: string; event_name: string; business_name: string; business_id: string; cta_type: OfferCtaType; interested: number }[]; page: number; pageSize: number }
 
-export function AdminOfferInterests({ invitesOnly = false }: { invitesOnly?: boolean }) {
+export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: { invitesOnly?: boolean; rsvpsOnly?: boolean }) {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [result, setResult] = useState<{ key: string; data: InterestData } | null>(null)
   const [offers, setOffers] = useState<InterestData['offers']>([])
-  const [dealId, setDealId] = useState('')
+  const [selectedDealId, setSelectedDealId] = useState('')
+  const dealId = rsvpsOnly ? searchParams.get('dealId') || '' : selectedDealId
+  const setDealId = (value: string) => {
+    if (!rsvpsOnly) { setSelectedDealId(value); return }
+    const next = new URLSearchParams(searchParams)
+    if (value) next.set('dealId', value); else next.delete('dealId')
+    setSearchParams(next, { replace: true })
+  }
   const [businessId, setBusinessId] = useState('')
-  const ctaFilter: Record<string, string> = invitesOnly ? { ctaType: 'get_launch_invite' } : {}
+  const [responseType, setResponseType] = useState('')
+  const ctaFilter: Record<string, string> = invitesOnly ? { ctaType: 'get_launch_invite' } : rsvpsOnly ? { scope: 'events', ...(responseType ? { ctaType: responseType } : {}) } : {}
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -145,34 +154,62 @@ export function AdminOfferInterests({ invitesOnly = false }: { invitesOnly?: boo
       if (!response.ok) throw new Error((await response.json()).error || 'Export failed.')
       const url = URL.createObjectURL(await response.blob())
       const link = document.createElement('a')
-      link.href = url; link.download = invitesOnly ? `invite-requests${dealId ? '-' + dealId : businessId ? '-' + businessId : ''}.csv` : 'interested-educators.csv'
+      const prefix = rsvpsOnly ? 'event-rsvps' : invitesOnly ? 'invite-requests' : 'interested-educators'
+      link.href = url; link.download = `${prefix}${dealId ? '-' + dealId : businessId ? '-' + businessId : ''}.csv`
       document.body.appendChild(link)
       link.click(); link.remove()
       window.setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (e) { setError((e as Error).message) } finally { setExporting(false) }
   }
-  return <section className="admin-card admin-table-card offer-interests" aria-busy={loading}>
-    <div className="admin-card-heading"><div><h2>{invitesOnly ? "Invite Requests" : "Interested educators"}</h2><p>{invitesOnly ? "Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations." : "Waitlists, RSVPs and launch invite requests."}</p></div></div>
+  const selectedOffer = offers.find(offer => offer.id === dealId)
+  const columns: { key: keyof Submission; label: string }[] = rsvpsOnly ? [
+    { key: 'full_name', label: 'Name' }, { key: 'email', label: 'Email' },
+    { key: 'cta_type', label: 'Response' }, { key: 'event_name', label: 'Event' },
+    { key: 'business_name', label: 'Business' }, { key: 'member_id', label: 'Member ID' },
+    { key: 'submitted_at', label: 'Submission date' },
+  ] : [
+    { key: 'member_id', label: 'Member ID' }, { key: 'full_name', label: 'Name' },
+    { key: 'email', label: 'Email' }, { key: 'business_name', label: 'Business' },
+    { key: 'event_name', label: 'Event' }, { key: 'cta_type', label: 'CTA type' },
+    { key: 'submitted_at', label: 'Submission date' },
+  ]
+  return <section className={`admin-card admin-table-card offer-interests${rsvpsOnly ? ' event-responses' : ''}`} aria-busy={loading}>
+    <div className="admin-card-heading"><div>
+      <h2>{rsvpsOnly ? 'RSVPs & invitations' : invitesOnly ? 'Invite Requests' : 'Interested educators'}</h2>
+      <p>{rsvpsOnly ? 'Event responses only. Creating a TeachersVIP account does not create an RSVP. Invitation requests and confirmed RSVPs are labelled separately.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
+      {!rsvpsOnly && <Link className="back-link" to="/admin/rsvps">Open RSVPs & invitations</Link>}
+    </div></div>
+    {rsvpsOnly && <div className="event-shortcuts" aria-label="Event shortcuts">
+      <button type="button" className="action action-soft" aria-pressed={dealId === 'batters-brunch-grand-opening'} onClick={() => { setBusinessId(''); setDealId('batters-brunch-grand-opening'); setPage(1) }}>Batters &amp; Brunch</button>
+      {dealId && <button type="button" className="action action-soft" onClick={() => { setBusinessId(''); setDealId(''); setPage(1) }}>All events</button>}
+    </div>}
     <div className="interest-list-tools">
-      {invitesOnly && <label className="field"><span>Business</span><select value={businessId} onChange={event => { setBusinessId(event.target.value); setDealId(''); setPage(1) }}>
+      {(invitesOnly || rsvpsOnly) && <label className="field"><span>Business</span><select value={businessId} onChange={event => { setBusinessId(event.target.value); setDealId(''); setPage(1) }}>
         <option value="">All businesses</option>
         {[...new Map(offers.map(offer => [offer.business_id, offer.business_name])).entries()].map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select></label>}
-      <label className="field"><span>{invitesOnly ? "Event" : "Business / event"}</span><select value={dealId} onChange={event => { setDealId(event.target.value); setPage(1) }}>
-        <option value="">{invitesOnly ? "All launch events" : "All interest offers"}</option>
-        {offers.filter(offer => !businessId || offer.business_id === businessId).map(offer => <option key={offer.id} value={offer.id}>{offer.business_name} · {offer.event_name || offer.title} · {offer.interested} interested</option>)}
+      <label className="field"><span>{invitesOnly || rsvpsOnly ? 'Event' : 'Business / event'}</span><select value={dealId} onChange={event => { setDealId(event.target.value); setPage(1) }}>
+        <option value="">{rsvpsOnly ? 'All events' : invitesOnly ? 'All launch events' : 'All interest offers'}</option>
+        {dealId && !offers.some(offer => offer.id === dealId) && <option value={dealId}>{dealId === 'batters-brunch-grand-opening' ? 'Batters & Brunch · Grand Opening' : 'Selected event'}</option>}
+        {offers.filter(offer => !businessId || offer.business_id === businessId).map(offer => <option key={offer.id} value={offer.id}>{offer.business_name} · {offer.event_name || offer.title} · {offer.interested} {rsvpsOnly ? 'responses' : 'interested'}</option>)}
       </select></label>
-      <button className="action action-soft" disabled={loading} onClick={() => setRevision(value => value + 1)}>Refresh list</button>
-      <button className="action action-gold" disabled={loading || exporting || !data?.totals.submissions} onClick={() => void download()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
+      {rsvpsOnly && <label className="field"><span>Response</span><select value={responseType} onChange={event => { setResponseType(event.target.value); setPage(1) }}>
+        <option value="">All event responses</option>
+        <option value="rsvp">RSVP confirmed</option>
+        <option value="get_launch_invite">Invitation requested</option>
+      </select></label>}
+      <button type="button" className="action action-soft" disabled={loading} onClick={() => setRevision(value => value + 1)}>Refresh list</button>
+      <button type="button" className="action action-gold" disabled={loading || exporting || !data?.totals.submissions} onClick={() => void download()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
     </div>
+    {rsvpsOnly && selectedOffer?.cta_type === 'get_launch_invite' && <div className="notice">This event is collecting invitation requests. An invitation request does not confirm attendance.</div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
-    {loading ? <p role="status">Loading interested educators…</p> : data && <>
-      <div className="interest-totals"><strong>{data.totals.educators} total interested educators</strong><span>{data.totals.submissions} event submissions</span></div>
-      {data.submissions.length ? <div className="interest-table-scroll" tabIndex={0} role="region" aria-label="Interested educators list"><table className="interest-table">
-        <thead><tr>{['Member ID', 'Name', 'Email', 'Business', 'Event', 'CTA type', 'Submission date'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-        <tbody>{data.submissions.map(row => <tr key={row.id}><td>{row.member_id}</td><td>{row.full_name}</td><td>{row.email}</td><td>{row.business_name}</td><td>{row.event_name}</td><td>{OFFER_CTA_LABELS[row.cta_type]}</td><td>{new Date(row.submitted_at).toLocaleString()}</td></tr>)}</tbody>
-      </table></div> : <p className="admin-empty">No interested educators for this selection yet.</p>}
-      {data.totals.submissions > data.pageSize && <div className="interest-pagination"><button className="action action-soft" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.totals.submissions / data.pageSize)}</span><button className="action action-soft" disabled={page * data.pageSize >= data.totals.submissions} onClick={() => setPage(value => value + 1)}>Next</button></div>}
+    {loading ? <p role="status">{rsvpsOnly ? 'Loading event responses…' : 'Loading interested educators…'}</p> : data && <>
+      <div className="interest-totals" role="status"><strong>{data.totals.educators} {rsvpsOnly ? 'educators responded' : 'total interested educators'}</strong><span>{data.totals.submissions} {rsvpsOnly ? responseType === 'rsvp' ? 'confirmed RSVPs' : responseType === 'get_launch_invite' ? 'invitation requests' : 'event responses' : 'event submissions'}</span></div>
+      {data.submissions.length ? <div className="interest-table-scroll" tabIndex={0} role="region" aria-label={rsvpsOnly ? 'Event responses list' : 'Interested educators list'}><table className="interest-table">
+        <thead><tr>{columns.map(column => <th scope="col" key={column.key}>{column.label}</th>)}</tr></thead>
+        <tbody>{data.submissions.map(row => <tr key={row.id}>{columns.map(column => <td key={column.key} data-label={column.label}><span>{column.key === 'cta_type' ? (rsvpsOnly ? OFFER_RESPONSE_LABELS : OFFER_CTA_LABELS)[row.cta_type] : column.key === 'submitted_at' ? new Date(row.submitted_at).toLocaleString() : row[column.key]}</span></td>)}</tr>)}</tbody>
+      </table></div> : <p className="admin-empty">{rsvpsOnly ? 'No event responses match these filters. An educator appears here only after submitting an RSVP or invitation request.' : 'No interested educators for this selection yet.'}</p>}
+      {data.totals.submissions > data.pageSize && <div className="interest-pagination"><button type="button" className="action action-soft" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.totals.submissions / data.pageSize)}</span><button type="button" className="action action-soft" disabled={page * data.pageSize >= data.totals.submissions} onClick={() => setPage(value => value + 1)}>Next</button></div>}
     </>}
   </section>
 }

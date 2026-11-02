@@ -7140,6 +7140,12 @@ function AdminRouter({ userId }: { userId: string }) {
       </Page>
     )
 
+  if (view === "rsvps")
+    return <Page title="RSVPs">
+      <AdminNavigation section="rsvps" />
+      <AdminOfferInterests rsvpsOnly />
+    </Page>
+
   if (["overview", "businesses-deals", "requests-messages"].includes(view))
     return <AdminPage key={view} userId={userId} view={view} />
 

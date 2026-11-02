@@ -5,6 +5,7 @@ import { Link, NavLink, useNavigate, useSearchParams } from "react-router-dom"
 import {
   ArrowRight,
   ChartBar,
+  CalendarCheck,
   Envelope,
   House,
   MapPin,
@@ -54,6 +55,13 @@ export const ADMIN_SECTIONS = [
     label: "Business Partners",
     description: "Businesses, locations, offers and publishing",
     icon: Storefront,
+  },
+
+  {
+    path: "rsvps",
+    label: "RSVPs",
+    description: "Event responses and invitations, including Batters & Brunch",
+    icon: CalendarCheck,
   },
 
   {

@@ -80,7 +80,7 @@ describe('offer interest authorization and repeat submissions', () => {
   })
   it.each(['anonymous', 'member'] as const)('protects list and CSV from %s access', async role => {
     const { app, query } = setup(role)
-    for (const url of ['/api/admin/offer-interests', '/api/admin/offer-interests?export=csv']) {
+    for (const url of ['/api/admin/offer-interests', '/api/admin/offer-interests?export=csv', '/api/admin/offer-interests?scope=events', '/api/admin/offer-interests?scope=events&export=csv']) {
       expect((await app.inject({ method: 'GET', url })).statusCode).toBe(role === 'anonymous' ? 401 : 403)
     }
     expect(query).not.toHaveBeenCalled()
@@ -96,6 +96,9 @@ describe('offer interest authorization and repeat submissions', () => {
     expect(query.mock.calls[0][0]).not.toContain('LIMIT')
   })
   it.each([
+    ['dealId=batters-brunch-grand-opening&scope=events', ['batters-brunch-grand-opening', null, null]],
+    ['dealId=batters-brunch-grand-opening&scope=events&ctaType=rsvp', ['batters-brunch-grand-opening', null, 'rsvp']],
+    ['businessId=batters-and-brunch&scope=events&ctaType=get_launch_invite', [null, 'batters-and-brunch', 'get_launch_invite']],
     ['dealId=event-a', ['event-a', null, null]],
     ['dealId=event-b', ['event-b', null, null]],
     ['dealId=empty-event&businessId=business-b&ctaType=get_launch_invite', ['empty-event', 'business-b', 'get_launch_invite']],
@@ -157,5 +160,44 @@ describe('manage RSVP ownership', () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/me/rsvps/${id}` })).statusCode).toBe(200)
     expect(query.mock.calls[0][1]).toEqual([id, 'member-user-id'])
     expect(query.mock.calls[0][0]).toContain("user_id=$2 AND cta_type='rsvp'")
+  })
+})
+
+describe('dedicated event response scope', () => {
+  it('uses event-only predicates for rows, totals, offer counts and CSV', async () => {
+    const { app, query } = setup('admin')
+    query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ submissions: 0, educators: 0 }] }).mockResolvedValueOnce({ rows: [] })
+    const response = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events&dealId=batters-brunch-grand-opening&ctaType=rsvp' })
+    expect(response.json()).toMatchObject({ submissions: [], totals: { submissions: 0, educators: 0 } })
+    for (const sql of [query.mock.calls[0][0], query.mock.calls[1][0]]) {
+      expect(sql).toContain("cta_type IN ('rsvp','get_launch_invite')")
+      expect(sql).not.toContain('FROM users')
+    }
+    const offerSql = query.mock.calls[2][0]
+    expect(offerSql).toContain("s.cta_type IN ('rsvp','get_launch_invite')")
+    // An invitation event must remain selectable even with no confirmed RSVPs.
+    expect(offerSql).toContain("d.cta_type IN ('rsvp','get_launch_invite') OR s.id IS NOT NULL")
+    expect(offerSql).not.toContain('d.published')
+    query.mockResolvedValueOnce({ rows: [] })
+    const csv = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events&dealId=batters-brunch-grand-opening&ctaType=rsvp&export=csv' })
+    expect(csv.body.trim().split('\r\n')).toHaveLength(1)
+    expect(query.mock.calls[3][0]).toContain("cta_type IN ('rsvp','get_launch_invite')")
+    expect(query.mock.calls[3][1]).toEqual(query.mock.calls[1][1])
+  })
+  it('labels invitation requests separately from confirmed RSVPs in event exports', async () => {
+    const { app, query } = setup('admin')
+    const base = { member_id: 'VIP-123', full_name: 'Educator', email: 'educator@example.test', business_name: 'Batters & Brunch', event_name: 'Grand Opening', submitted_at: '2026-11-02T00:00:00Z' }
+    query.mockResolvedValueOnce({ rows: [{ ...base, cta_type: 'get_launch_invite' }, { ...base, cta_type: 'rsvp' }] })
+    const response = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events&export=csv' })
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toContain('"Response"')
+    expect(response.body).toContain('"Invitation requested"')
+    expect(response.body).toContain('"RSVP confirmed"')
+    expect(response.headers['content-disposition']).toContain('event-rsvps.csv')
+  })
+  it('rejects unknown scopes before querying the database', async () => {
+    const { app, query } = setup('admin')
+    expect((await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=accounts' })).statusCode).toBe(400)
+    expect(query).not.toHaveBeenCalled()
   })
 })
