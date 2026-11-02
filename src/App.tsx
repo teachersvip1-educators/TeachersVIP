@@ -6316,6 +6316,9 @@ function AdminOperationsPage({ view }: { view: string }) {
       }),
     [domains, setDomains] = useState<DomainReview[]>([]),
     [reviewNotes, setReviewNotes] = useState<Record<string, string>>({}),
+    [verificationErrors, setVerificationErrors] = useState<Record<string, string>>({}),
+    [verificationMessage, setVerificationMessage] = useState(""),
+    [verificationBusy, setVerificationBusy] = useState<Record<string, boolean>>({}),
     [creatorSubmissions, setCreatorSubmissions] =
       useState<CreatorNetworkSubmission[]>([]),
     [creatorFilterOptions, setCreatorFilterOptions] =
@@ -6521,20 +6524,20 @@ function AdminOperationsPage({ view }: { view: string }) {
     const notes = (reviewNotes[item.id] || "").trim()
 
     if (notes.length < 2) {
-      setError("Add review notes before deciding this verification case.")
+      setVerificationErrors((current) => ({ ...current, [item.id]: "Enter at least 2 characters in review notes before making a decision." }))
 
       return
     }
 
-    setError("")
-
-    setMessage("")
+    setVerificationErrors((current) => ({ ...current, [item.id]: "" }))
+    setVerificationMessage("")
+    setVerificationBusy((current) => ({ ...current, [item.id]: true }))
 
     try {
       await patch(`/admin/verifications/${item.id}`, { action, notes })
 
-      setMessage(
-        `Verification case ${
+      setVerificationMessage(
+        `Verification case for ${item.email} ${
           action === "approve"
             ? "approved"
             : action === "reject"
@@ -6544,10 +6547,11 @@ function AdminOperationsPage({ view }: { view: string }) {
       )
 
       setReviewNotes((current) => ({ ...current, [item.id]: "" }))
-
-      await load()
+      if (action !== "request_information") setQueue((current) => current.filter((entry) => entry.id !== item.id))
     } catch (e) {
-      setError((e as Error).message)
+      setVerificationErrors((current) => ({ ...current, [item.id]: (e as Error).message || "Unable to save the decision. Please try again." }))
+    } finally {
+      setVerificationBusy((current) => ({ ...current, [item.id]: false }))
     }
   }
 
@@ -6713,6 +6717,7 @@ function AdminOperationsPage({ view }: { view: string }) {
                 </p>
               </div>
             </div>
+            {verificationMessage && <Notice kind="success">{verificationMessage}</Notice>}
             <div className="admin-table">
               {queue.map((item) => (
                 <div
@@ -6733,28 +6738,35 @@ function AdminOperationsPage({ view }: { view: string }) {
                   </div>
                   <span className="admin-status">{item.status}</span>
                   <label className="field admin-review-notes">
-                    <span>Review notes</span>
+                    <span>Review notes (required)</span>
                     <textarea
+                      aria-invalid={Boolean(verificationErrors[item.id])}
+                      aria-describedby={verificationErrors[item.id] ? `verification-error-${item.id}` : undefined}
+                      maxLength={2000}
                       value={reviewNotes[item.id] || ""}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setReviewNotes((current) => ({
                           ...current,
 
                           [item.id]: event.target.value,
                         }))
-                      }
+                        setVerificationErrors((current) => ({ ...current, [item.id]: "" }))
+                      }}
                       placeholder="Record the evidence and reason for this decision"
                     />
+                    {verificationErrors[item.id] && <span id={`verification-error-${item.id}`} className="verification-error" role="alert">{verificationErrors[item.id]}</span>}
                   </label>
                   <div className="admin-review-actions">
                     <button
                       className="action action-gold"
+                      disabled={verificationBusy[item.id]}
                       onClick={() => void reviewVerification(item, "approve")}
                     >
                       Approve educator
                     </button>
                     <button
                       className="action action-soft"
+                      disabled={verificationBusy[item.id]}
                       onClick={() =>
                         void reviewVerification(item, "request_information")
                       }
@@ -6763,6 +6775,7 @@ function AdminOperationsPage({ view }: { view: string }) {
                     </button>
                     <button
                       className="action action-danger"
+                      disabled={verificationBusy[item.id]}
                       onClick={() => void reviewVerification(item, "reject")}
                     >
                       Reject
