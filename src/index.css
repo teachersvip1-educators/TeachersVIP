@@ -488,6 +488,8 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .interest-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; font-size: 12px; }
 .interest-consent { color: #64748b; font-size: 13px; line-height: 1.5; }
 .interest-card-cta { display: block; width: fit-content; color: #755a10; font-size: 12px; font-weight: 800; }
+.rsvp-count-badge { display: block; width: fit-content; margin-top: 8px; padding: 4px 9px; border: 1px solid #d8e9e0; border-radius: 999px; background: #edf8f1; color: #17583c; font-size: 12px; font-weight: 800; }
+.public-collage .rsvp-count-badge { position: absolute; right: 8px; bottom: 8px; margin: 0; }
 .admin-row > div { min-width: 0; overflow-wrap: anywhere; }
 .public-offer-page { min-height: 100dvh; background: #fff; }
 .public-offer-header { background: #06101e; }

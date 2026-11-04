@@ -78,6 +78,7 @@ import {
   OfferInterestDetail,
   ManageRsvp,
   pendingOfferDestination,
+  RsvpCountBadge,
 } from "./OfferInterests"
 
 import {
@@ -210,6 +211,8 @@ type Deal = {
   event_name?: string | null
 
   interest_submitted?: boolean
+
+  confirmed_rsvp_count?: number | null
 
   starts_at?: string | null
 
@@ -367,7 +370,11 @@ function PublicHome() {
   useEffect(() => {
     let active = true
     api<{ deals: Deal[] }>('/deals').then(result => {
-      if (active) setOffers(result.deals.slice(0, 3))
+      if (!active) return
+      const rsvpOffer = result.deals.find(offer => offer.confirmed_rsvp_count != null)
+      setOffers(rsvpOffer
+        ? [rsvpOffer, ...result.deals.filter(offer => offer.id !== rsvpOffer.id).slice(0, 2)]
+        : result.deals.slice(0, 3))
     }).catch(() => { /* Keep the invitation visible if discovery is unavailable. */ })
     return () => { active = false }
   }, [])
@@ -403,8 +410,9 @@ function PublicHome() {
             aria-label="Featured educator offers"
           >
             {offers.map((offer, index) => <figure key={offer.id} className={index === 0 ? 'public-collage-main' : ''}>
-              <Link to={`/deals/${offer.id}`} aria-label={`${offer.business_name}: ${offer.title}`}>
+              <Link to={`/deals/${offer.id}`}>
                 <img src={offer.image_url} alt={`${offer.title} at ${offer.business_name}`} />
+                <RsvpCountBadge count={offer.confirmed_rsvp_count} />
               </Link>
             </figure>)}
             {!offers.length && <div className="notice"><strong>Local perks are on the way.</strong><p>Join TeachersVIP to discover offers from participating US businesses as they launch.</p></div>}
@@ -2335,6 +2343,9 @@ function DealCard({
   onReview: (deal: Deal) => void
 }) {
   const isOpen = useOpeningStatus(deal)
+  const showInterestLabel =
+    isInterestCta(deal.cta_type) &&
+    !(deal.cta_type === "rsvp" && /\brsvp\b/i.test(deal.title))
 
   return (
     <article className={`deal-card ${deal.used ? "deal-card-used" : ""}`}>
@@ -2373,11 +2384,12 @@ function DealCard({
           <strong>
             {deal.giveaway ? "Enter to Win a Classroom Toolkit" : deal.title}
           </strong>
-          {isInterestCta(deal.cta_type) && (
+          {showInterestLabel && (
             <span className="interest-card-cta">
               {OFFER_CTA_LABELS[deal.cta_type!]}
             </span>
           )}
+          <RsvpCountBadge count={deal.confirmed_rsvp_count} />
           <p>
             {deal.used
               ? "Previously activated. Check the offer limits before using it again."

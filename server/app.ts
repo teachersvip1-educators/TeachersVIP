@@ -2608,7 +2608,12 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     },
   )
 
-  app.get("/api/deals", async (request) => {
+  const confirmedRsvpCount = `CASE WHEN d.cta_type='rsvp' THEN (
+    SELECT count(*)::int FROM offer_interest_submissions s
+    WHERE s.deal_id=d.id AND s.cta_type='rsvp'
+  ) END AS confirmed_rsvp_count`
+
+  app.get("/api/deals", async (request, reply) => {
     blockManualReview(request)
     const query = parse(
       z.object({
@@ -2622,7 +2627,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const userId = request.currentUser?.id ?? null
     const result = await db.query(
       `SELECT d.id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.starts_at,d.ends_at,d.usage_limit_count,d.usage_limit_period,d.redemption_method AS "redemptionMethod",
-      d.cta_type,d.event_name,
+      d.cta_type,d.event_name,${confirmedRsvpCount},
       b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.opening_hours,b.hours_timezone,b.address,b.latitude,b.longitude,
       EXISTS(SELECT 1 FROM saved_deals s WHERE s.deal_id=d.id AND s.user_id=$1) saved,
       EXISTS(SELECT 1 FROM deal_activations a WHERE a.deal_id=d.id AND a.user_id=$1 AND a.outcome='successful') used
@@ -2639,7 +2644,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         query.saved ?? false,
       ],
     )
-    return { deals: result.rows.map(withOpeningStatus) }
+    return reply.header("Cache-Control", "no-store").send({ deals: result.rows.map(withOpeningStatus) })
   })
 
   app.get("/api/deals/:id", async (request, reply) => {
@@ -2647,7 +2652,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const { id } = parse(z.object({ id: z.string() }), request.params)
     const result = await db.query(
       `SELECT d.id,d.title,d.description,d.channel,d.category,d.restrictions,d.estimated_savings_cents,d.featured,d.sponsored,d.giveaway,d.starts_at,d.ends_at,d.usage_limit_count,d.usage_limit_period,d.redemption_method AS "redemptionMethod",
-      d.cta_type,d.event_name,d.event_date_time,d.event_location,EXISTS(SELECT 1 FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2 AND s.cta_type=d.cta_type) interest_submitted,
+      d.cta_type,d.event_name,d.event_date_time,d.event_location,${confirmedRsvpCount},
+      EXISTS(SELECT 1 FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2 AND s.cta_type=d.cta_type) interest_submitted,
       (SELECT s.id FROM offer_interest_submissions s WHERE s.deal_id=d.id AND s.user_id=$2 AND s.cta_type='rsvp') rsvp_id,
       b.id business_id,b.name business_name,b.description business_description,COALESCE(d.image_url,b.image_url) image_url,b.website_url,b.distance,b.hours,b.is_open,b.opening_hours,b.hours_timezone,b.address,b.latitude,b.longitude,
       COALESCE((SELECT json_agg(json_build_object('id',bl.id,'name',bl.location_name,'address',COALESCE(bl.address,b.address),'latitude',bl.latitude,'longitude',bl.longitude,'radiusMeters',bl.geofence_radius_m,'timezone',bl.timezone) ORDER BY bl.location_name,bl.id)
@@ -2657,7 +2663,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     )
     if (!result.rows[0])
       return reply.code(404).send({ error: "Deal not found." })
-    return { deal: withOpeningStatus(result.rows[0]) }
+    return reply.header("Cache-Control", "no-store").send({ deal: withOpeningStatus(result.rows[0]) })
   })
 
   app.post(

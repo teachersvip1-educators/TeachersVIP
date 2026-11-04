@@ -14,7 +14,12 @@ function rememberOffer(id: string) {
   try { localStorage.setItem(pendingKey, `/deals/${id}`) } catch { /* Signup remains available. */ }
 }
 
-type InterestOffer = { id: string; business_name: string; title: string; description: string; restrictions: string; image_url: string; event_name?: string | null; event_date_time?: string | null; event_location?: string | null; rsvp_id?: string | null; cta_type?: OfferCtaType; interest_submitted?: boolean }
+type InterestOffer = { id: string; business_name: string; title: string; description: string; restrictions: string; image_url: string; event_name?: string | null; event_date_time?: string | null; event_location?: string | null; rsvp_id?: string | null; cta_type?: OfferCtaType; interest_submitted?: boolean; confirmed_rsvp_count?: number | null }
+
+export function RsvpCountBadge({ count }: { count?: number | null }) {
+  if (count == null) return null
+  return <span className="rsvp-count-badge">{count.toLocaleString('en-US')} confirmed {count === 1 ? 'RSVP' : 'RSVPs'}</span>
+}
 
 export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user: { verified: boolean; is_demo?: boolean } | null }) {
   const [submitted, setSubmitted] = useState(Boolean(deal.interest_submitted))
@@ -63,6 +68,7 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
     <div className="detail-copy">
       <div className="tags"><span>{label}</span></div>
       <h2>{deal.event_name || deal.title}</h2>
+      <RsvpCountBadge count={deal.confirmed_rsvp_count} />
       <p>{deal.description}</p>
       <div className="restriction"><b>{isRsvp ? 'Event RSVP' : 'Event and offer details'}</b><span>{deal.restrictions}</span></div>
       {deal.cta_type === 'rsvp' && <p><strong>Date and time:</strong> {deal.event_date_time || 'To be announced'}<br /><strong>Location:</strong> {deal.event_location || 'To be announced'}</p>}
