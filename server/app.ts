@@ -2608,10 +2608,13 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     },
   )
 
-  const confirmedRsvpCount = `CASE WHEN d.cta_type='rsvp' THEN (
+  // Batters & Brunch uses the requested public display total.
+  const confirmedRsvpCount = `CASE WHEN d.cta_type='rsvp' THEN CASE
+    WHEN d.id='batters-brunch-grand-opening' THEN 56
+    ELSE (
     SELECT count(*)::int FROM offer_interest_submissions s
     WHERE s.deal_id=d.id AND s.cta_type='rsvp'
-  ) END AS confirmed_rsvp_count`
+  ) END END AS confirmed_rsvp_count`
 
   app.get("/api/deals", async (request, reply) => {
     blockManualReview(request)
