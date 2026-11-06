@@ -2608,13 +2608,13 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     },
   )
 
-  // Batters & Brunch uses the requested public display total.
-  const confirmedRsvpCount = `CASE WHEN d.cta_type='rsvp' THEN CASE
-    WHEN d.id='batters-brunch-grand-opening' THEN 56
-    ELSE (
+  // The Batters & Brunch public count starts at 56 at the cutoff below.
+  const confirmedRsvpCount = `CASE WHEN d.cta_type='rsvp' THEN
+    (CASE WHEN d.id='batters-brunch-grand-opening' THEN 56 ELSE 0 END) + (
     SELECT count(*)::int FROM offer_interest_submissions s
     WHERE s.deal_id=d.id AND s.cta_type='rsvp'
-  ) END END AS confirmed_rsvp_count`
+      AND (d.id<>'batters-brunch-grand-opening' OR s.submitted_at >= TIMESTAMPTZ '2026-11-06 07:58:07+00')
+  ) END AS confirmed_rsvp_count`
 
   app.get("/api/deals", async (request, reply) => {
     blockManualReview(request)
@@ -3372,10 +3372,11 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
 
   registerOfferInterestRoutes(app, db, requireVerified, requireSuperadmin, async (submission, idempotencyKey) => {
     if (!resend) return false
+    const rsvpAppUrl = config.NODE_ENV === "production" ? "https://teachersvip.net" : config.APP_URL
     const { error } = await resend.emails.send({
       from: config.RESEND_FROM_EMAIL,
       to: submission.email,
-      ...rsvpConfirmationEmail(submission, config.APP_URL),
+      ...rsvpConfirmationEmail(submission, rsvpAppUrl),
     }, { idempotencyKey })
     if (error) throw error
     return true

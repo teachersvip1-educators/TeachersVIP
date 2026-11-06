@@ -29,6 +29,7 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
   const [error, setError] = useState('')
   const [emailError, setEmailError] = useState('')
   const [confirmationEmailSent, setConfirmationEmailSent] = useState(false)
+  const [updatedCount, setUpdatedCount] = useState<{ dealId: string; count: number } | null>(null)
   const confirmationRef = useRef<HTMLDivElement>(null)
   useEffect(() => { setSubmitted(Boolean(deal.interest_submitted)); setRsvpId(deal.rsvp_id); setError(''); setConfirmationEmailSent(false) }, [deal.id, deal.interest_submitted, deal.rsvp_id])
   useEffect(() => {
@@ -48,6 +49,12 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
       setEmailError('')
       setSubmitted(true)
       try { localStorage.removeItem(pendingKey) } catch { /* Optional return destination. */ }
+      if (isRsvp) {
+        void api<{ deal: InterestOffer }>(eventReturnTo).then(({ deal: refreshedDeal }) => {
+          if (refreshedDeal.confirmed_rsvp_count != null)
+            setUpdatedCount({ dealId: refreshedDeal.id, count: refreshedDeal.confirmed_rsvp_count })
+        }).catch(() => { /* The RSVP is saved even if the count refresh fails. */ })
+      }
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   const resendConfirmation = async () => {
@@ -68,7 +75,7 @@ export function OfferInterestDetail({ deal, user }: { deal: InterestOffer; user:
     <div className="detail-copy">
       <div className="tags"><span>{label}</span></div>
       <h2>{deal.event_name || deal.title}</h2>
-      <RsvpCountBadge count={deal.confirmed_rsvp_count} />
+      <RsvpCountBadge count={updatedCount?.dealId === deal.id ? updatedCount.count : deal.confirmed_rsvp_count} />
       <p>{deal.description}</p>
       <div className="restriction"><b>{isRsvp ? 'Event RSVP' : 'Event and offer details'}</b><span>{deal.restrictions}</span></div>
       {deal.cta_type === 'rsvp' && <p><strong>Date and time:</strong> {deal.event_date_time || 'To be announced'}<br /><strong>Location:</strong> {deal.event_location || 'To be announced'}</p>}
