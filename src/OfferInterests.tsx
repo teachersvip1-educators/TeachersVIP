@@ -140,7 +140,7 @@ export function ManageRsvp({ user }: { user: { verified: boolean; is_demo?: bool
   </section>
 }
 
-type Submission = { id: string; deal_id: string; cta_type: OfferCtaType; member_id: string; full_name: string; email: string; business_name: string; event_name: string; submitted_at: string }
+type Submission = { id: string; deal_id: string; cta_type: OfferCtaType; member_id: string; full_name: string; email: string; verified_school_email: string | null; business_name: string; event_name: string; submitted_at: string }
 type InterestData = { submissions: Submission[]; totals: { submissions: number; educators: number }; offers: { id: string; title: string; event_name: string; business_name: string; business_id: string; cta_type: OfferCtaType; interested: number }[]; page: number; pageSize: number }
 
 type RegistrationOnly = { id: string; full_name: string; email: string; city: string; is_verified: boolean; registered_at: string }
@@ -272,7 +272,8 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
   }
   const selectedOffer = offers.find(offer => offer.id === dealId)
   const columns: { key: keyof Submission; label: string }[] = rsvpsOnly ? [
-    { key: 'full_name', label: 'Name' }, { key: 'email', label: 'Email' },
+    { key: 'full_name', label: 'Name' }, { key: 'email', label: 'RSVP contact email' },
+    { key: 'verified_school_email', label: 'Verified school email' },
     { key: 'cta_type', label: 'Response' }, { key: 'event_name', label: 'Event' },
     { key: 'business_name', label: 'Business' }, { key: 'member_id', label: 'Member ID' },
     { key: 'submitted_at', label: 'Submission date' },
@@ -285,7 +286,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
   return <section className={`admin-card admin-table-card offer-interests${rsvpsOnly ? ' event-responses' : ''}`} aria-busy={loading}>
     <div className="admin-card-heading"><div>
       <h2>{rsvpsOnly ? responseType === 'rsvp' ? 'Confirmed RSVPs' : responseType ? 'Other event responses' : 'All event responses' : invitesOnly ? 'Invite Requests' : 'Interested educators'}</h2>
-      <p>{rsvpsOnly ? 'This list defaults to educators who completed and confirmed an RSVP. Invitation requests and waitlist signups are separate response types and never count as confirmed RSVPs. Educator approval is managed under Educators.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
+      <p>{rsvpsOnly ? 'This list defaults to educators who completed and confirmed an RSVP. RSVP contact email and verified school email are shown together for identity checks. Invitation requests and waitlist signups are separate response types and never count as confirmed RSVPs. Educator approval is managed under Educators.' : invitesOnly ? 'Names and emails from Get Launch Invite, kept separately for each business and event. Export a list for follow-up invitations.' : 'Waitlists, RSVPs and launch invite requests.'}</p>
       {!rsvpsOnly && <Link className="back-link" to="/admin/rsvps">Open RSVPs & invitations</Link>}
       {rsvpsOnly && <a className="back-link" href="#registered-only">Find a registered member without an event response</a>}
     </div></div>
@@ -318,7 +319,7 @@ export function AdminOfferInterests({ invitesOnly = false, rsvpsOnly = false }: 
       <div className="interest-totals" role="status"><strong>{data.totals.educators} {rsvpsOnly ? responseType === 'rsvp' ? 'educators RSVP’d' : 'educators responded' : 'total interested educators'}</strong><span>{data.totals.submissions} {rsvpsOnly ? responseType === 'rsvp' ? 'confirmed RSVPs' : responseType === 'get_launch_invite' ? 'invitation requests' : responseType === 'join_waitlist' ? 'waitlist signups' : 'event responses' : 'event submissions'}</span></div>
       {data.submissions.length ? <div className="interest-table-scroll" tabIndex={0} role="region" aria-label={rsvpsOnly ? 'Event responses list' : 'Interested educators list'}><table className="interest-table">
         <thead><tr>{columns.map(column => <th scope="col" key={column.key}>{column.label}</th>)}</tr></thead>
-        <tbody>{data.submissions.map(row => <tr key={row.id}>{columns.map(column => <td key={column.key} data-label={column.label}><span>{column.key === 'cta_type' ? (rsvpsOnly ? OFFER_RESPONSE_LABELS : OFFER_CTA_LABELS)[row.cta_type] : column.key === 'submitted_at' ? new Date(row.submitted_at).toLocaleString() : row[column.key]}</span></td>)}</tr>)}</tbody>
+        <tbody>{data.submissions.map(row => <tr key={row.id}>{columns.map(column => <td key={column.key} data-label={column.label}><span>{column.key === 'cta_type' ? (rsvpsOnly ? OFFER_RESPONSE_LABELS : OFFER_CTA_LABELS)[row.cta_type] : column.key === 'submitted_at' ? new Date(row.submitted_at).toLocaleString() : column.key === 'verified_school_email' ? row.verified_school_email || 'Not on file' : row[column.key]}</span></td>)}</tr>)}</tbody>
       </table></div> : <p className="admin-empty">{rsvpsOnly ? responseType === 'rsvp' ? 'No confirmed RSVPs match these filters yet.' : 'No event responses match these filters yet.' : 'No interested educators for this selection yet.'}</p>}
       {data.totals.submissions > data.pageSize && <div className="interest-pagination"><button type="button" className="action action-soft" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</button><span>Page {page} of {Math.ceil(data.totals.submissions / data.pageSize)}</span><button type="button" className="action action-soft" disabled={page * data.pageSize >= data.totals.submissions} onClick={() => setPage(value => value + 1)}>Next</button></div>}
     </>}

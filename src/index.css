@@ -361,9 +361,11 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .public-offers { display: grid; gap: 13px; align-self: center; }
 .public-offers-heading { margin: 0; color: #f5d061; font-size: 12px; font-weight: 800; letter-spacing: 1.8px; text-transform: uppercase; }
 .public-collage { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
-.public-collage figure { position: relative; overflow: hidden; aspect-ratio: 3 / 2; margin: 0; border: 1px solid #ffffff20; border-radius: 16px; background: #10233e; box-shadow: 0 22px 55px #0007; }
+.public-collage figure { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 8px; margin: 0; }
+.public-collage-count { display: flex; min-height: 24px; justify-content: flex-end; }
+.public-collage-count:empty { display: none; }
 .public-collage-main { grid-column: 1 / -1; }
-.public-collage figure a { display: block; height: 100%; }
+.public-collage figure a { display: block; aspect-ratio: 3 / 2; overflow: hidden; border: 1px solid #ffffff20; border-radius: 16px; background: #10233e; box-shadow: 0 22px 55px #0007; }
 .public-collage > .notice { grid-column: 1 / -1; }
 .public-collage img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; transition: transform .35s ease; }
 .public-collage figure:hover img { transform: scale(1.025); }
@@ -403,7 +405,7 @@ h1, h2 { font-family: Oswald, sans-serif; }
 }
 @media (max-width: 520px) {
   .public-hero-actions { align-items: stretch; flex-direction: column; }.public-primary,.public-secondary { width: 100%; }
-  .public-collage { display: flex; gap: 12px; overflow-x: auto; margin-inline: -16px; padding: 0 16px 8px; scroll-snap-type: x mandatory; scrollbar-width: none; }.public-collage::-webkit-scrollbar { display: none; }.public-collage figure { flex: 0 0 86%; scroll-snap-align: center; box-shadow: 0 16px 38px #0006; }
+  .public-collage { display: flex; gap: 12px; overflow-x: auto; margin-inline: -16px; padding: 0 16px 8px; scroll-snap-type: x mandatory; scrollbar-width: none; }.public-collage::-webkit-scrollbar { display: none; }.public-collage figure { flex: 0 0 86%; scroll-snap-align: center; }
   .partner-intro { width: calc(100% - 32px); }.partner-intro h1 { font-size: 43px; }
   .communication-status { grid-template-columns: 1fr; }
 }
@@ -489,7 +491,6 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .interest-consent { color: #64748b; font-size: 13px; line-height: 1.5; }
 .interest-card-cta { display: block; width: fit-content; color: #755a10; font-size: 12px; font-weight: 800; }
 .rsvp-count-badge { display: block; width: fit-content; margin-top: 8px; padding: 4px 9px; border: 1px solid #d8e9e0; border-radius: 999px; background: #edf8f1; color: #17583c; font-size: 12px; font-weight: 800; }
-.public-collage .rsvp-count-badge { position: absolute; right: 8px; bottom: 8px; margin: 0; }
 .admin-row > div { min-width: 0; overflow-wrap: anywhere; }
 .public-offer-page { min-height: 100dvh; background: #fff; }
 .public-offer-header { background: #06101e; }

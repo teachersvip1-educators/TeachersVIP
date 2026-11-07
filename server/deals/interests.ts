@@ -42,7 +42,7 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
          AND (s.rsvp_confirmation_claimed_at IS NULL OR s.rsvp_confirmation_claimed_at < now()-interval '5 minutes')
          AND (s.rsvp_confirmation_attempted_at IS NULL OR s.rsvp_confirmation_attempted_at < now()-interval '1 minute')
          AND ($3::boolean OR s.rsvp_confirmation_sent_at IS NULL)
-       RETURNING s.id,s.email,s.event_name,s.business_name,s.deal_id,
+       RETURNING s.id,s.email,s.event_name,s.business_name,s.deal_id,u.work_email verified_school_email,
          COALESCE(NULLIF(u.first_name,''),'there') first_name,
          d.event_date_time,d.event_location,s.rsvp_confirmation_attempt_key`,
       [id, userId, forceResend, randomUUID()],
@@ -180,14 +180,21 @@ export function registerOfferInterestRoutes(app: FastifyInstance, db: DbPool, re
     const eventResponseTypes = "'rsvp','get_launch_invite','join_waitlist'"
     const where = `WHERE ($1::text IS NULL OR deal_id=$1) AND ($2::text IS NULL OR business_id=$2) AND ($3::text IS NULL OR cta_type=$3)${scope === 'events' ? ` AND cta_type IN (${eventResponseTypes})` : ''}`
     const submissions = await db.query(
-      `SELECT id,deal_id,cta_type,member_id,full_name,email,business_name,event_name,submitted_at FROM offer_interest_submissions
-       ${where} ORDER BY submitted_at DESC,id
+      `SELECT s.id,s.deal_id,s.cta_type,s.member_id,s.full_name,s.email,u.work_email verified_school_email,s.business_name,s.event_name,s.submitted_at
+       FROM offer_interest_submissions s LEFT JOIN users u ON u.id=s.user_id
+       ${where} ORDER BY s.submitted_at DESC,s.id
        ${format ? '' : 'LIMIT 100 OFFSET $4'}`, format ? filters : [...filters, (page - 1) * 100],
     )
     if (format) {
-      const lines = [['Member ID', 'Name', 'Email', 'Business', 'Event', scope === 'events' ? 'Response' : 'CTA type', 'Submission date'].map(csvCell).join(',')]
+      const lines = [(scope === 'events'
+        ? ['Member ID', 'Name', 'RSVP contact email', 'Verified school email', 'Business', 'Event', 'Response', 'Submission date']
+        : ['Member ID', 'Name', 'Email', 'Business', 'Event', 'CTA type', 'Submission date'])
+        .map(csvCell).join(',')]
       const labels = scope === 'events' ? OFFER_RESPONSE_LABELS : OFFER_CTA_LABELS
-      for (const row of submissions.rows) lines.push([row.member_id, row.full_name, row.email, row.business_name, row.event_name, labels[row.cta_type as OfferCtaType], new Date(row.submitted_at).toISOString()].map(csvCell).join(','))
+      for (const row of submissions.rows) lines.push((scope === 'events'
+        ? [row.member_id, row.full_name, row.email, row.verified_school_email || 'Not on file', row.business_name, row.event_name, labels[row.cta_type as OfferCtaType], new Date(row.submitted_at).toISOString()]
+        : [row.member_id, row.full_name, row.email, row.business_name, row.event_name, labels[row.cta_type as OfferCtaType], new Date(row.submitted_at).toISOString()])
+        .map(csvCell).join(','))
       return reply.header('Content-Disposition', `attachment; filename="${scope === 'events' ? 'event-rsvps' : 'interested-educators'}.csv"`).header('Cache-Control', 'no-store').type('text/csv; charset=utf-8').send('\uFEFF' + lines.join('\r\n'))
     }
     const [totals, offers] = await Promise.all([

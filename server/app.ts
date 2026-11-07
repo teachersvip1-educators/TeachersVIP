@@ -171,10 +171,12 @@ function creatorNetworkVerificationEmailHtml(verificationUrl: string) {
 function newUserEmailHtml(user: {
   firstName: string
   lastName: string
-  email: string
+  schoolEmail: string
+  offersEmail: string
   city: string
 }) {
-  return `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#0f172a;padding:28px"><h1>New TeachersVIP member</h1><p>A new educator account has been registered.</p><p><strong>Name:</strong> ${user.firstName} ${user.lastName}<br><strong>Email:</strong> ${user.email}<br><strong>City:</strong> ${user.city}</p></body></html>`
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!)
+  return `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#0f172a;padding:28px"><h1>New TeachersVIP member</h1><p>A new educator account has been registered.</p><p><strong>Name:</strong> ${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}<br><strong>School email (used for educator verification):</strong> ${escapeHtml(user.schoolEmail)}<br><strong>Preferred offers and RSVP contact email:</strong> ${escapeHtml(user.offersEmail)}<br><strong>City:</strong> ${escapeHtml(user.city)}</p></body></html>`
 }
 
 export function buildApp({ config, db }: { config: Config, db: DbPool }) {
@@ -734,10 +736,11 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           html: newUserEmailHtml({
             firstName: body.firstName,
             lastName: body.lastName,
-            email: body.schoolEmail,
+            schoolEmail: body.schoolEmail,
+            offersEmail: body.offersEmail ?? body.schoolEmail,
             city: body.city,
           }),
-          text: `New TeachersVIP member\n\nName: ${body.firstName} ${body.lastName}\nSchool email: ${body.schoolEmail}\nCity: ${body.city}`,
+          text: `New TeachersVIP member\n\nName: ${body.firstName} ${body.lastName}\nSchool email (used for educator verification): ${body.schoolEmail}\nPreferred offers and RSVP contact email: ${body.offersEmail ?? body.schoolEmail}\nCity: ${body.city}`,
         })
         if (error)
           app.log.error(

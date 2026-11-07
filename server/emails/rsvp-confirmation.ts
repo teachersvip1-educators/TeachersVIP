@@ -2,6 +2,7 @@ export interface RsvpConfirmation {
   id: string
   first_name: string
   email: string
+  verified_school_email?: string | null
   event_name: string
   event_date_time?: string | null
   event_location?: string | null
@@ -11,6 +12,9 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ 
 
 export function rsvpConfirmationEmail(submission: RsvpConfirmation, appUrl: string) {
   const manageUrl = `${appUrl.replace(/\/$/, '')}/rsvp/${encodeURIComponent(submission.id)}`
+  const emailDetails = submission.verified_school_email !== undefined
+    ? `\n\nEmail details\nRSVP contact email: ${submission.email.trim() || 'Not available'}\nVerified school email: ${submission.verified_school_email?.trim() || 'Not on file'}`
+    : ''
   const text = `Hi ${submission.first_name.trim() || 'there'},
 
 Your RSVP is confirmed! We’re excited to celebrate with you and welcome you to this special event.
@@ -19,7 +23,7 @@ You’re part of a community that believes teachers deserve to feel appreciated,
 
 Event: ${submission.event_name}
 Date and time: ${submission.event_date_time?.trim() || 'To be announced'}
-Location: ${submission.event_location?.trim() || 'To be announced'}
+Location: ${submission.event_location?.trim() || 'To be announced'}${emailDetails}
 
 We’ll send you any important updates before the event. If your plans change, please update your RSVP here: ${manageUrl}.
 

@@ -410,9 +410,9 @@ function PublicHome() {
             aria-label="Featured educator offers"
           >
             {offers.map((offer, index) => <figure key={offer.id} className={index === 0 ? 'public-collage-main' : ''}>
+              <div className="public-collage-count"><RsvpCountBadge count={offer.confirmed_rsvp_count} /></div>
               <Link to={`/deals/${offer.id}`}>
                 <img src={offer.image_url} alt={`${offer.title} at ${offer.business_name}`} />
-                <RsvpCountBadge count={offer.confirmed_rsvp_count} />
               </Link>
             </figure>)}
             {!offers.length && <div className="notice"><strong>Local perks are on the way.</strong><p>Join TeachersVIP to discover offers from participating US businesses as they launch.</p></div>}
