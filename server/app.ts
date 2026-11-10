@@ -256,7 +256,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     if (!raw) return
     const result = await db.query<UserRow>(
       `SELECT u.id,u.personal_email,u.offers_email,u.is_demo,u.first_name,u.last_name,u.mobile,u.city,u.sms_consent,u.email_updates,u.work_email,u.educator_verified_at,u.is_superadmin,
-      (SELECT c.status FROM educator_verification_cases c WHERE c.user_id=u.id ORDER BY c.created_at DESC LIMIT 1) verification_status
+      (SELECT c.status FROM educator_verification_cases c WHERE c.user_id=u.id ORDER BY c.created_at DESC,c.id DESC LIMIT 1) verification_status
       FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now()`,
       [tokenHash(raw)],
     )
@@ -517,9 +517,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       `SELECT id,institution_id,
       normalized_domain AS "normalizedDomain",registrable_domain AS "registrableDomain",classification,decision,
       eligible_role AS "eligibleRole",evidence,evidence_url AS "evidenceUrl",reviewed_at AS "reviewedAt"
-      FROM educator_domains WHERE normalized_domain=ANY($1::text[]) OR registrable_domain=$2
-      ORDER BY (normalized_domain=$3) DESC,(decision='auto_eligible') DESC,reviewed_at DESC NULLS LAST LIMIT 1`,
-      [candidates, parsedEmail.registrableDomain, parsedEmail.hostname],
+      FROM educator_domains WHERE normalized_domain=ANY($1::text[])
+      ORDER BY (normalized_domain=$2) DESC,(decision='auto_eligible') DESC,reviewed_at DESC NULLS LAST LIMIT 1`,
+      [candidates, parsedEmail.hostname],
     )
     return { parsedEmail, evidence: result.rows[0] ?? null }
   }
@@ -536,6 +536,70 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         `TVIP-${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`,
       ],
     )
+  }
+
+  const autoApproveListedDomain = async (userId: string) => {
+    const client = await db.connect()
+    try {
+      await client.query("BEGIN")
+      const pending = await client.query<{
+        id: string
+        work_email: string
+        selected_role: EducatorRole
+      }>(
+        `SELECT c.id,c.work_email,c.selected_role
+         FROM educator_verification_cases c JOIN users u ON u.id=c.user_id
+         WHERE c.id=(
+           SELECT latest.id FROM educator_verification_cases latest
+           WHERE latest.user_id=$1 ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1
+         ) AND c.status='manual_review'
+           AND c.email_verified_at IS NOT NULL AND u.educator_verified_at IS NULL
+         FOR UPDATE OF c`,
+        [userId],
+      )
+      const record = pending.rows[0]
+      if (!record) {
+        await client.query("COMMIT")
+        return null
+      }
+
+      const { evidence } = await findDomainEvidence(client, record.work_email)
+      const decision = decideVerification(record.work_email, record.selected_role, evidence)
+      if (decision.status !== "verified") {
+        await client.query("COMMIT")
+        return null
+      }
+
+      const updated = await client.query<Pick<UserRow, "work_email" | "educator_verified_at">>(
+        `UPDATE users SET work_email=$1,educator_verified_at=now(),updated_at=now() WHERE id=$2
+           AND educator_verified_at IS NULL
+         RETURNING work_email,educator_verified_at`,
+        [record.work_email, userId],
+      )
+      const approved = updated.rows[0]
+      if (!approved) {
+        await client.query("COMMIT")
+        return null
+      }
+      await client.query(
+        `UPDATE educator_verification_cases SET status='verified',reason_codes=$1,domain_id=$2,
+         institution_id=$3,normalized_domain=$4,updated_at=now() WHERE id=$5`,
+        [decision.reasonCodes, evidence?.id ?? null, evidence?.institution_id ?? null, decision.normalizedDomain, record.id],
+      )
+      await ensureMemberCard(client, userId)
+      await client.query(
+        `INSERT INTO educator_verification_audits(id,case_id,actor_user_id,event_type,previous_status,next_status,reason_codes,metadata)
+         VALUES($1,$2,$3,'auto_eligible','manual_review','verified',$4,$5)`,
+        [randomUUID(), record.id, userId, decision.reasonCodes, JSON.stringify({ automatic: true, domain: decision.normalizedDomain, promotedAfterDomainReview: true })],
+      )
+      await client.query("COMMIT")
+      return { ...approved, caseId: record.id }
+    } catch (error) {
+      await client.query("ROLLBACK")
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   const issuePass2UForUser = async (userId: string, caseId?: string) => {
@@ -905,15 +969,32 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return { ok: true }
   })
 
-  app.get("/api/auth/session", async (request) => ({
-    user: request.currentUser
-      ? {
-          ...request.currentUser,
-          verified: Boolean(request.currentUser.educator_verified_at),
-          is_superadmin: isSuperadmin(request.currentUser),
+  app.get("/api/auth/session", async (request, reply) => {
+    reply.header("Cache-Control", "no-store")
+    const user = request.currentUser
+    if (user && !user.is_demo && !user.educator_verified_at && user.verification_status === "manual_review") {
+      const promoted = await autoApproveListedDomain(user.id)
+      if (promoted) {
+        user.work_email = promoted.work_email
+        user.educator_verified_at = promoted.educator_verified_at
+        user.verification_status = "verified"
+        try {
+          await issuePass2UForUser(user.id, promoted.caseId)
+        } catch (error) {
+          app.log.error({ error, userId: user.id }, "Automatic Pass2U issuance failed after domain approval")
         }
-      : null,
-  }))
+      }
+    }
+    return {
+      user: user
+        ? {
+            ...user,
+            verified: Boolean(user.educator_verified_at),
+            is_superadmin: isSuperadmin(user),
+          }
+        : null,
+    }
+  })
 
   app.get("/api/auth/admin-registration-status", async () => {
     const result = await db.query<{ available: boolean }>(
