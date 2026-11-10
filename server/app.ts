@@ -33,6 +33,7 @@ import { registerOfferInterestRoutes } from "./deals/interests.js"
 import { rsvpConfirmationEmail } from "./emails/rsvp-confirmation.js"
 import { normalizeUsCity } from "../shared/us-city.js"
 import { isValidTimezone, withOpeningStatus } from "../shared/business-hours.js"
+import { DEFAULT_DISCOVER_MARKET, DISCOVER_MARKETS, findDiscoverMarket } from "../shared/discover-markets.js"
 
 const hoursIntervalSchema = z.object({
   open: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -50,6 +51,11 @@ const usCitySchema = z.string().trim().min(2).max(100).transform((value, ctx) =>
   return z.NEVER
 })
 const offersEmailSchema = z.email().max(254).transform(value => value.toLowerCase()).nullable().optional()
+const discoverMarketSchema = z.enum(DISCOVER_MARKETS.map(market => market.id))
+const feedbackLocationSchema = z.union([
+  z.object({ market: discoverMarketSchema }),
+  z.object({ market: z.undefined().optional(), city: usCitySchema }),
+])
 function safeMemberReturnTo(value: unknown) {
   if (typeof value !== 'string') return '/vip-card'
   if (value === '/vip-card' || /^\/deals\/[a-z0-9][a-z0-9-]*$/i.test(value) || /^\/rsvp\/[a-f0-9-]{36}$/i.test(value)) return value
@@ -300,30 +306,45 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
 
   const sendCityDealAlerts = async (dealId: string) => {
     if (!resend || !config.MARKETING_POSTAL_ADDRESS) return
-    const recipients = await db.query<{ user_id: string, email: string, city: string, title: string, unsubscribe_token: string }>(
-      `SELECT DISTINCT a.user_id,COALESCE(u.offers_email,u.work_email,u.personal_email) email,a.city,a.unsubscribe_token,d.title FROM city_deal_alerts a
-       JOIN users u ON u.id=a.user_id AND NOT u.is_demo
-       JOIN deals d ON d.id=$1 AND d.published AND d.channel='in_person'
-         AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now())
-       JOIN businesses b ON b.id=d.business_id AND b.published
-       JOIN deal_locations dl ON dl.deal_id=d.id
-       JOIN business_locations l ON l.id=dl.business_location_id AND l.active
-       WHERE a.active AND (
-         lower(trim(l.city))=lower(trim(split_part(a.city, ',', 1)))
-         OR lower(l.address) LIKE lower(trim(split_part(a.city, ',', 1))) || ',%'
-         OR position(', ' || lower(trim(split_part(a.city, ',', 1))) || ',' in lower(l.address))>0
+    const recipients = await db.query<{ user_id: string, email: string, city: string | null, market_id: string | null, title: string, unsubscribe_token: string }>(
+      `WITH live_deal AS (
+         SELECT d.id,d.title,d.market_id,d.channel FROM deals d
+         JOIN businesses b ON b.id=d.business_id AND b.published
+         WHERE d.id=$1 AND d.published AND (d.starts_at IS NULL OR d.starts_at<=now())
+           AND (d.ends_at IS NULL OR d.ends_at>now())
+       ), subscribers AS (
+         SELECT a.user_id,a.unsubscribe_token,a.market_id,NULL::text AS city
+         FROM market_deal_alerts a JOIN live_deal d ON a.market_id=d.market_id
+         WHERE a.active
+         UNION ALL
+         SELECT a.user_id,a.unsubscribe_token,NULL,a.city FROM city_deal_alerts a
+         CROSS JOIN live_deal d
+         WHERE a.active AND d.channel='in_person' AND EXISTS (
+           SELECT 1 FROM deal_locations dl JOIN business_locations l ON l.id=dl.business_location_id AND l.active
+           WHERE dl.deal_id=d.id AND (
+             lower(trim(l.city))=lower(trim(split_part(a.city, ',', 1)))
+             OR lower(l.address) LIKE lower(trim(split_part(a.city, ',', 1))) || ',%'
+             OR position(', ' || lower(trim(split_part(a.city, ',', 1))) || ',' in lower(l.address))>0
+           )
+         )
        )
-         AND NOT EXISTS (SELECT 1 FROM city_deal_alert_deliveries x WHERE x.user_id=a.user_id AND x.deal_id=d.id)`,
+       SELECT DISTINCT ON (a.user_id) a.user_id,COALESCE(u.offers_email,u.work_email,u.personal_email) email,
+         a.city,a.market_id,a.unsubscribe_token,d.title
+       FROM subscribers a JOIN users u ON u.id=a.user_id AND NOT u.is_demo
+       CROSS JOIN live_deal d
+       WHERE NOT EXISTS (SELECT 1 FROM city_deal_alert_deliveries x WHERE x.user_id=a.user_id AND x.deal_id=d.id)
+       ORDER BY a.user_id,a.market_id NULLS LAST`,
       [dealId],
     )
     for (const recipient of recipients.rows) {
+      const city = findDiscoverMarket(recipient.market_id)?.label ?? recipient.city
       try {
         const sent = await resend.emails.send({
           from: config.RESEND_FROM_EMAIL,
           to: recipient.email,
-          subject: `A TeachersVIP deal arrived in ${recipient.city}`,
-          text: `Promotional email from TeachersVIP.\n\n${recipient.title} is now available in ${recipient.city}. View it at ${config.APP_URL}/deals/${encodeURIComponent(dealId)}.\n\nStop city alerts: ${config.APP_URL}/unsubscribe?token=${recipient.unsubscribe_token}\n\nTeachersVIP · ${config.MARKETING_POSTAL_ADDRESS}`,
-        })
+          subject: `A TeachersVIP deal arrived in ${city}`,
+          text: `Promotional email from TeachersVIP.\n\n${recipient.title} is now available in ${city}. View it at ${config.APP_URL}/deals/${encodeURIComponent(dealId)}.\n\nStop city alerts: ${config.APP_URL}/unsubscribe?token=${recipient.unsubscribe_token}\n\nTeachersVIP · ${config.MARKETING_POSTAL_ADDRESS}`,
+        }, { idempotencyKey: `deal-alert/${dealId}/${recipient.user_id}` })
         if (sent.error) throw sent.error
         await db.query('INSERT INTO city_deal_alert_deliveries(user_id,deal_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [recipient.user_id, dealId])
       } catch (error) {
@@ -1614,6 +1635,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             .optional(),
           dealTitle: z.string().trim().min(2).max(160).optional(),
           dealCategory: z.string().trim().min(2).max(60).optional(),
+          market: discoverMarketSchema.default(DEFAULT_DISCOVER_MARKET.id),
           restrictions: z.string().trim().min(2).max(1000).optional(),
           estimatedSavingsCents: z
             .number()
@@ -1796,7 +1818,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         )
       }
       await client.query(
-        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,estimated_savings_cents,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,starts_at,ends_at,published) VALUES($1,$2,$3,$4,'in_person',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,estimated_savings_cents,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,starts_at,ends_at,published,market_id) VALUES($1,$2,$3,$4,'in_person',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
         [
           body.dealId,
           body.businessId,
@@ -1815,6 +1837,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           body.startsAt ?? null,
           body.endsAt ?? null,
           body.publish,
+          body.market,
         ],
       )
       for (const locationId of operationalLocationIds)
@@ -2056,6 +2079,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             .regex(/^[a-z0-9-]+$/)
             .max(100),
           businessId: z.string().trim().min(1).max(80),
+          market: discoverMarketSchema.default(DEFAULT_DISCOVER_MARKET.id),
           ctaType: z.enum(['use_deal','join_waitlist','rsvp','get_launch_invite']).default('use_deal'),
           eventName: z.string().trim().min(2).max(160).nullable().optional(),
           eventDateTime: z.string().trim().max(200).nullable().optional(),
@@ -2149,7 +2173,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     try {
       await client.query("BEGIN")
       await client.query(
-        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,image_url,published,starts_at,ends_at,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,cta_type,event_name,event_date_time,event_location) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+        `INSERT INTO deals(id,business_id,title,description,channel,category,restrictions,promo_code_encrypted,estimated_savings_cents,featured,sponsored,giveaway,image_url,published,starts_at,ends_at,redemption_method,redemption_payload_encrypted,display_ttl_seconds,usage_limit_count,usage_limit_period,usage_limit_scope,tracking_mode,cta_type,event_name,event_date_time,event_location,market_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
         [
           body.id,
           body.businessId,
@@ -2182,6 +2206,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           body.eventName || body.title,
           body.eventDateTime || null,
           body.eventLocation || null,
+          body.market,
         ],
       )
       if (body.channel === "in_person" && body.ctaType === 'use_deal') {
@@ -2256,6 +2281,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     const body = parse(
       z
         .object({
+          market: discoverMarketSchema.optional(),
           ctaType: z.enum(['use_deal', 'join_waitlist', 'rsvp', 'get_launch_invite']).optional(),
           eventName: z.string().trim().max(160).nullable().optional(),
           eventDateTime: z.string().trim().max(200).nullable().optional(),
@@ -2309,6 +2335,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       request.body,
     )
     const mappings: Record<string, string> = {
+      market: "market_id",
       ctaType: "cta_type", eventName: "event_name", eventDateTime: "event_date_time", eventLocation: "event_location", category: "category", channel: "channel",
       giveaway: "giveaway", promoCode: "promo_code_encrypted",
       published: "published",
@@ -2330,13 +2357,14 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       trackingMode: "tracking_mode",
     }
     const client = await db.connect()
-    let wasPublished = false
+    let shouldSendAlerts = false
     try {
       await client.query('BEGIN')
       const existing = await client.query('SELECT * FROM deals WHERE id=$1 FOR UPDATE', [id])
       const prior = existing.rows[0]
       if (!prior) throw Object.assign(new Error('Offer not found.'), { statusCode: 404 })
-      wasPublished = prior.published
+      shouldSendAlerts = (body.published ?? prior.published) &&
+        (!prior.published || (body.market !== undefined && body.market !== prior.market_id))
       const cta = body.ctaType ?? prior.cta_type
       const channel = body.channel ?? prior.channel
       const period = body.usageLimitPeriod ?? prior.usage_limit_period
@@ -2374,7 +2402,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error }
     finally { client.release() }
-    if (body.published === true && !wasPublished)
+    if (shouldSendAlerts)
       await sendCityDealAlerts(id).catch(error => app.log.error({ error }, 'City alert delivery failed'))
     return { ok: true }
   })
@@ -2627,6 +2655,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         category: z.string().optional(),
         channel: z.enum(["in_person", "online"]).optional(),
         saved: z.coerce.boolean().optional(),
+        market: discoverMarketSchema.optional(),
       }),
       request.query,
     )
@@ -2641,6 +2670,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       WHERE d.published AND b.published AND (d.starts_at IS NULL OR d.starts_at<=now()) AND (d.ends_at IS NULL OR d.ends_at>now()) AND ($2::text IS NULL OR d.category=$2) AND ($3::text IS NULL OR d.channel=$3)
       AND ($4::text IS NULL OR d.title ILIKE '%'||$4||'%' OR b.name ILIKE '%'||$4||'%')
       AND (NOT $5::boolean OR EXISTS(SELECT 1 FROM saved_deals s WHERE s.deal_id=d.id AND s.user_id=$1))
+      AND ($6::text IS NULL OR d.market_id=$6)
       ORDER BY d.featured DESC,d.sponsored DESC,b.name`,
       [
         userId,
@@ -2648,6 +2678,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         query.channel ?? null,
         query.q ?? null,
         query.saved ?? false,
+        query.market ?? null,
       ],
     )
     return reply.header("Cache-Control", "no-store").send({ deals: result.rows.map(withOpeningStatus) })
@@ -3269,32 +3300,53 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     return reply.code(201).send({ ok: true })
   })
 
-  app.get('/api/me/city-alert', async (request) => {
+  app.get('/api/me/city-alert', async (request, reply) => {
     const user = requireVerified(request)
+    const { market } = parse(z.object({ market: discoverMarketSchema.optional() }), request.query)
+    reply.header('Cache-Control', 'no-store')
+    if (market) {
+      const result = await db.query<{ active: boolean }>('SELECT active FROM market_deal_alerts WHERE user_id=$1 AND market_id=$2', [user.id, market])
+      const row = result.rows[0]
+      return { alert: row ? { city: findDiscoverMarket(market)!.label, active: row.active } : null }
+    }
     const result = await db.query('SELECT city,email,active FROM city_deal_alerts WHERE user_id=$1', [user.id])
     return { alert: result.rows[0] ?? null }
   })
 
   app.put('/api/me/city-alert', async (request) => {
     const user = requireVerified(request)
-    const body = parse(z.object({ city: usCitySchema, active: z.boolean() }), request.body)
-    await db.query(`INSERT INTO city_deal_alerts(user_id,city,email,active,unsubscribe_token) VALUES($1,$2,$3,$4,$5)
-      ON CONFLICT(user_id) DO UPDATE SET city=EXCLUDED.city,email=EXCLUDED.email,active=EXCLUDED.active,updated_at=now()`,
-      [user.id, body.city, user.offers_email || user.work_email || user.personal_email, body.active, randomUUID()])
+    const body = parse(feedbackLocationSchema.and(z.object({ active: z.boolean() })), request.body)
+    if (body.market) {
+      await db.query(`INSERT INTO market_deal_alerts(user_id,market_id,active,unsubscribe_token) VALUES($1,$2,$3,$4)
+        ON CONFLICT(user_id,market_id) DO UPDATE SET active=EXCLUDED.active,updated_at=now()`,
+        [user.id, body.market, body.active, randomUUID()])
+    } else {
+      await db.query(`INSERT INTO city_deal_alerts(user_id,city,email,active,unsubscribe_token) VALUES($1,$2,$3,$4,$5)
+        ON CONFLICT(user_id) DO UPDATE SET city=EXCLUDED.city,email=EXCLUDED.email,active=EXCLUDED.active,updated_at=now()`,
+        [user.id, body.city, user.offers_email || user.work_email || user.personal_email, body.active, randomUUID()])
+    }
     return { ok: true, deliveryReady: Boolean(resend && config.MARKETING_POSTAL_ADDRESS) }
   })
 
   app.post('/api/city-alerts/unsubscribe', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (request) => {
     const { token } = parse(z.object({ token: z.string().uuid() }), request.body)
-    await db.query('UPDATE city_deal_alerts SET active=false,updated_at=now() WHERE unsubscribe_token=$1', [token])
+    await db.query(`WITH legacy AS (
+        UPDATE city_deal_alerts SET active=false,updated_at=now() WHERE unsubscribe_token=$1
+      )
+      UPDATE market_deal_alerts SET active=false,updated_at=now() WHERE unsubscribe_token=$1`, [token])
     return { ok: true }
   })
 
   app.post('/api/business-suggestions', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (request, reply) => {
     const user = requireVerified(request)
-    const body = parse(z.object({ businessName: z.string().trim().min(2).max(140), city: usCitySchema, locationHint: z.string().trim().max(300).optional(), reason: z.string().trim().max(1000).optional() }), request.body)
+    const body = parse(feedbackLocationSchema.and(z.object({
+      businessName: z.string().trim().min(2).max(140),
+      locationHint: z.string().trim().max(300).optional(),
+      reason: z.string().trim().max(1000).optional(),
+    })), request.body)
+    const city = body.market ? findDiscoverMarket(body.market)!.label : body.city
     const id = randomUUID()
-    await db.query('INSERT INTO business_suggestions(id,user_id,business_name,city,location_hint,reason) VALUES($1,$2,$3,$4,$5,$6)', [id,user.id,body.businessName,body.city,body.locationHint || null,body.reason || null])
+    await db.query('INSERT INTO business_suggestions(id,user_id,business_name,city,location_hint,reason) VALUES($1,$2,$3,$4,$5,$6)', [id,user.id,body.businessName,city,body.locationHint || null,body.reason || null])
     return reply.code(201).send({ ok: true, id })
   })
 

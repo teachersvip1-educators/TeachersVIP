@@ -20,6 +20,7 @@ import { api, post } from "./lib/api"
 import { focusApiError, validateAdminForm } from "./lib/admin-form"
 
 import { BUSINESS_CATEGORIES } from "../shared/business-categories"
+import { DEFAULT_DISCOVER_MARKET, DISCOVER_MARKETS } from "../shared/discover-markets"
 
 import {
   WEEK_DAYS,
@@ -158,6 +159,19 @@ export function AdminHomeContent() {
         )}
       </nav>
     </>
+  )
+}
+
+export function OfferMarketSelect({ defaultValue = DEFAULT_DISCOVER_MARKET.id }: { defaultValue?: string }) {
+  return (
+    <label className="field">
+      <span>Discover market</span>
+      <select name="market" required defaultValue={defaultValue}>
+        {DISCOVER_MARKETS.map(market => (
+          <option key={market.id} value={market.id}>{market.label}</option>
+        ))}
+      </select>
+    </label>
   )
 }
 

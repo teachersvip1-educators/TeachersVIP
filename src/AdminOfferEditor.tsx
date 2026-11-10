@@ -2,11 +2,11 @@ import { useEffect, useState, type FormEvent } from "react"
 import { Link } from "react-router-dom"
 import { api } from "./lib/api"
 import { focusApiError, validateAdminForm } from "./lib/admin-form"
-import { CategorySelect } from "./AdminWorkspace"
+import { CategorySelect, OfferMarketSelect } from "./AdminWorkspace"
 import { OFFER_CTA_LABELS, type OfferCtaType } from "../shared/offer-cta"
 
 type Offer = {
-  id: string; title: string; description: string; restrictions: string; category: string;
+  id: string; title: string; description: string; restrictions: string; category: string; market_id: string;
   cta_type: OfferCtaType; event_name: string | null; channel: string; image_url: string | null;
   event_date_time: string | null; event_location: string | null;
   starts_at: string | null; ends_at: string | null; redemption_method: string | null;
@@ -47,7 +47,7 @@ export function AdminOfferEditor({ id, businessId, locations }: { id: string; bu
     setBusy(true); setError(""); setSaved(false)
     try {
       await api(`/admin/deals/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({
-        title: text("title"), description: text("description"), category: text("category"),
+        title: text("title"), description: text("description"), category: text("category"), market: text("market"),
         restrictions: text("restrictions"), ctaType: cta, eventName: text("eventName") || null,
         eventDateTime: text('eventDateTime') || null, eventLocation: text('eventLocation') || null,
         channel, imageUrl: text("imageUrl") || null, startsAt: date("startsAt"), endsAt: date("endsAt"),
@@ -72,6 +72,7 @@ export function AdminOfferEditor({ id, businessId, locations }: { id: string; bu
     <h3>Edit offer: {offer.title}</h3>
     <p>Offer ID: {offer.id}. Save updates to this existing offer.</p>
     {field("Offer title", "title", offer.title, "text", true)}
+    <OfferMarketSelect defaultValue={offer.market_id} />
     <label className="field"><span>CTA type</span><select value={cta} onChange={e => setCta(e.target.value as OfferCtaType)}>{Object.entries(OFFER_CTA_LABELS).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>
     {field("Event name", "eventName", offer.event_name, "text", cta !== "use_deal")}
     {cta !== 'use_deal' && <>

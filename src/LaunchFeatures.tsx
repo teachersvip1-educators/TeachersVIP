@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 
 import { Link, useSearchParams } from "react-router-dom"
 
+import type { DiscoverMarket } from "../shared/discover-markets"
 import { api, patch, post } from "./lib/api"
 
 export function AnimatedSurface({
@@ -88,92 +89,98 @@ function FeedbackForm({
   )
 }
 
-export function CityAlert({ city, email }: { city: string; email: string }) {
-  const [chosenCity, setChosenCity] = useState(city)
-
-  const [savedCity, setSavedCity] = useState(city)
-
-  const [active, setActive] = useState(false)
-
+export function CityAlert({
+  market,
+  email,
+  comingSoon,
+}: {
+  market: DiscoverMarket
+  email: string
+  comingSoon: boolean
+}) {
+  const [active, setActive] = useState<boolean | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [loadError, setLoadError] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
 
   useEffect(() => {
-    api<{ alert: { city: string; active: boolean } | null }>("/me/city-alert")
-
+    const controller = new AbortController()
+    void api<{ alert: { active: boolean } | null }>(
+      `/me/city-alert?market=${encodeURIComponent(market.id)}`,
+      { signal: controller.signal },
+    )
       .then(({ alert }) => {
-        if (alert) {
-          setChosenCity(alert.city)
-
-          setSavedCity(alert.city)
-
-          setActive(alert.active)
-        }
+        if (!controller.signal.aborted) setActive(alert?.active ?? false)
       })
-
-      .catch(() => {})
-  }, [])
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadError(true)
+      })
+    return () => controller.abort()
+  }, [market.id, attempt])
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-
+    if (active === null || busy) return
+    setBusy(true)
     setStatus("")
 
-    const nextActive = !active || savedCity !== chosenCity
-
+    const nextActive = !active
     try {
       const result = await api<{ deliveryReady: boolean }>("/me/city-alert", {
         method: "PUT",
-
-        body: JSON.stringify({ city: chosenCity, active: nextActive }),
+        body: JSON.stringify({ market: market.id, active: nextActive }),
       })
-
       setActive(nextActive)
-
-      setSavedCity(chosenCity)
-
       setStatus(
         nextActive
           ? result.deliveryReady
-            ? `We'll email ${email} when a new local deal is published for ${chosenCity}.`
-            : `Your interest in ${chosenCity} is saved. Email alerts will start when delivery is configured.`
-          : "City alerts turned off.",
+            ? `We'll email ${email} when a new offer is published for ${market.label}.`
+            : `Your interest in ${market.label} is saved. Email alerts will start when delivery is configured.`
+          : `Alerts for ${market.label} turned off.`,
       )
     } catch (error) {
       setStatus((error as Error).message)
+    } finally {
+      setBusy(false)
     }
   }
 
+  const action = comingSoon
+    ? active ? "Leave the waitlist" : "Join the waitlist"
+    : active ? "Turn off alerts" : "Notify me"
+
   return (
-    <AnimatedSurface className="launch-panel">
-      <h2>Notify Me When Deals Arrive</h2>
-      <p>Get an email when a new in-person offer is published in your city.</p>
+    <>
+      {comingSoon
+        ? <h3>Notify Me When Deals Arrive</h3>
+        : <h2>Notify Me When Deals Arrive</h2>}
+      <p>Get an email when a new local offer is published in this market.</p>
       <form className="launch-inline-form" onSubmit={save}>
         <label>
-          City and state
-          <input
-            required
-            minLength={2}
-            maxLength={120}
-            placeholder="e.g. Houston, Texas"
-            value={chosenCity}
-            onChange={(event) => setChosenCity(event.target.value)}
-          />
+          City or market
+          <input value={market.label} readOnly />
         </label>
-        <button className="action action-gold" type="submit">
-          {active
-            ? savedCity === chosenCity
-              ? "Turn off alerts"
-              : "Update city"
-            : "Notify me"}
+        <button className="action action-gold" type="submit" disabled={busy || active === null}>
+          {busy ? "Saving…" : action}
         </button>
       </form>
       <small>Updates go to {email}.</small>
+      {loadError && (
+        <div className="market-alert-error">
+          <p role="alert">We couldn’t load your alert preference.</p>
+          <button className="suggest-business-trigger" type="button" onClick={() => {
+            setLoadError(false)
+            setAttempt(attempt + 1)
+          }}>Try again</button>
+        </div>
+      )}
       {status && <p role="status">{status}</p>}
-    </AnimatedSurface>
+    </>
   )
 }
 
-export function SuggestBusiness({ city }: { city: string }) {
+export function SuggestBusiness({ market }: { market: DiscoverMarket }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -194,7 +201,7 @@ export function SuggestBusiness({ city }: { city: string }) {
             values={(form) => ({
               businessName: form.get("businessName"),
 
-              city: form.get("city"),
+              market: market.id,
 
               locationHint: form.get("locationHint"),
 
@@ -213,14 +220,8 @@ export function SuggestBusiness({ city }: { city: string }) {
                 />
               </label>
               <label>
-                City and state
-                <input
-                  name="city"
-                  defaultValue={city}
-                  required
-                  minLength={2}
-                  maxLength={120}
-                />
+                City or market
+                <input value={market.label} readOnly />
               </label>
             </div>
             <label>

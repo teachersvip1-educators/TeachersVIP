@@ -5,7 +5,7 @@ import type { DbPool } from '../db/pool'
 
 const apps: ReturnType<typeof Fastify>[] = []
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())) })
-function setup(role: 'anonymous' | 'unverified' | 'member' | 'admin' = 'member', sendRsvpConfirmation?: (submission: any) => Promise<boolean>) {
+function setup(role: 'anonymous' | 'unverified' | 'member' | 'admin' = 'member', sendRsvpConfirmation?: Parameters<typeof registerOfferInterestRoutes>[4]) {
   const app = Fastify(); apps.push(app)
   const query = vi.fn()
   const authorize = (admin = false) => () => {
@@ -18,27 +18,63 @@ function setup(role: 'anonymous' | 'unverified' | 'member' | 'admin' = 'member',
 }
 
 describe('offer interest authorization and repeat submissions', () => {
-  const rsvp = { id: 'submission', submitted_at: '2026-10-28T00:00:00Z', cta_type: 'rsvp', email: 'personal@example.test', event_name: 'Educator evening', business_name: 'Partner', deal_id: 'event' }
+  const rsvp = { id: '7ac34bc6-9469-4770-85ae-e859db602202', submitted_at: '2026-10-28T00:00:00Z', cta_type: 'rsvp', email: 'personal@example.test', event_name: 'Educator evening', business_name: 'Partner', deal_id: 'event' }
+  const confirmation = {
+    id: rsvp.id,
+    email: rsvp.email,
+    event_name: rsvp.event_name,
+    business_name: rsvp.business_name,
+    deal_id: rsvp.deal_id,
+    first_name: 'Avery',
+    verified_school_email: 'avery@school.example.test',
+    event_date_time: 'November 14 at 6 PM CT',
+    event_location: 'Main Hall',
+    rsvp_confirmation_attempt_key: '0fe2ec8d-4a90-4043-8659-eacb7969fbdb',
+  }
+  const confirmationKey = `rsvp-confirmation/${rsvp.id}/${confirmation.rsvp_confirmation_attempt_key}`
+
   it('sends a thank-you to the selected email only on the first RSVP', async () => {
     const send = vi.fn().mockResolvedValue(true)
     const { app, query } = setup('member', send)
-    query.mockResolvedValueOnce({ rows: [{ id: 'event', event_date_time: 'November 14 at 6 PM CT', event_location: 'Main Hall' }] }).mockResolvedValueOnce({ rows: [rsvp] })
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'event' }] })
+      .mockResolvedValueOnce({ rows: [rsvp] })
+      .mockResolvedValueOnce({ rows: [confirmation] })
+      .mockResolvedValueOnce({ rows: [] })
     const first = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
     expect(first.statusCode).toBe(201)
     expect(first.json().confirmationEmailSent).toBe(true)
-    expect(send).toHaveBeenCalledWith({ ...rsvp, first_name: 'Avery', event_date_time: 'November 14 at 6 PM CT', event_location: 'Main Hall' })
+    expect(send).toHaveBeenCalledWith(confirmation, confirmationKey)
     expect(query.mock.calls[1][0]).toContain('COALESCE(u.offers_email,u.work_email,u.personal_email)')
-    query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [rsvp] })
+    expect(query.mock.calls[3][1]).toEqual([rsvp.id, true, confirmation.rsvp_confirmation_attempt_key])
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'event' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ ...rsvp, rsvp_confirmation_sent_at: '2026-10-28T00:00:01Z' }] })
     const repeat = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
-    expect(repeat.json().alreadySubmitted).toBe(true)
+    expect(repeat.statusCode).toBe(200)
+    expect(repeat.json()).toMatchObject({ alreadySubmitted: true, confirmationEmailSent: true })
     expect(send).toHaveBeenCalledTimes(1)
   })
-  it('keeps the RSVP saved if confirmation delivery fails', async () => {
-    const { app, query } = setup('member', vi.fn().mockRejectedValue(new Error('Mail unavailable')))
-    query.mockResolvedValueOnce({ rows: [{ id: 'event' }] }).mockResolvedValueOnce({ rows: [rsvp] })
+  it('keeps the RSVP saved and allows retrying if confirmation delivery fails', async () => {
+    const send = vi.fn().mockRejectedValueOnce(new Error('Mail unavailable')).mockResolvedValueOnce(true)
+    const { app, query } = setup('member', send)
+    query
+      .mockResolvedValueOnce({ rows: [{ id: 'event' }] })
+      .mockResolvedValueOnce({ rows: [rsvp] })
+      .mockResolvedValueOnce({ rows: [confirmation] })
+      .mockResolvedValueOnce({ rows: [] })
     const response = await app.inject({ method: 'POST', url: '/api/deals/event/interest', payload: {} })
     expect(response.statusCode).toBe(201)
-    expect(response.json()).toMatchObject({ submission: { id: 'submission' }, confirmationEmailSent: false })
+    expect(response.json()).toMatchObject({ submission: { id: rsvp.id }, confirmationEmailSent: false })
+    expect(query.mock.calls[3][1]).toEqual([rsvp.id, false, confirmation.rsvp_confirmation_attempt_key])
+
+    query.mockResolvedValueOnce({ rows: [confirmation] }).mockResolvedValueOnce({ rows: [] })
+    const retry = await app.inject({ method: 'POST', url: `/api/me/rsvps/${rsvp.id}/confirmation` })
+    expect(retry.statusCode).toBe(200)
+    expect(retry.json()).toEqual({ sent: true })
+    expect(send).toHaveBeenNthCalledWith(2, confirmation, confirmationKey)
+    expect(query.mock.calls[5][1]).toEqual([rsvp.id, true, confirmation.rsvp_confirmation_attempt_key])
   })
   it('does not send RSVP confirmation for waitlists or launch-invite requests', async () => {
     const send = vi.fn()
@@ -204,13 +240,13 @@ describe('dedicated event response scope', () => {
   })
   it('preserves saved responses without current event or educator eligibility filters', async () => {
     const { app, query } = setup('admin')
-    const historical = { id: 'older-response', deal_id: 'archived-event', cta_type: 'join_waitlist', member_id: 'OLD-123', full_name: 'Past attendee', email: 'saved@example.test', business_name: 'Past partner', event_name: 'Past event', submitted_at: '2020-01-01T00:00:00Z' }
+    const historical = { id: 'older-response', deal_id: 'archived-event', cta_type: 'join_waitlist', member_id: 'OLD-123', full_name: 'Past attendee', email: 'saved@example.test', verified_school_email: null, business_name: 'Past partner', event_name: 'Past event', submitted_at: '2020-01-01T00:00:00Z' }
     query.mockResolvedValueOnce({ rows: [historical] }).mockResolvedValueOnce({ rows: [{ submissions: 1, educators: 1 }] }).mockResolvedValueOnce({ rows: [{ id: 'archived-event', cta_type: 'use_deal', interested: 1 }] })
     const response = await app.inject({ method: 'GET', url: '/api/admin/offer-interests?scope=events' })
     expect(response.json()).toMatchObject({ submissions: [historical], totals: { submissions: 1, educators: 1 }, offers: [{ id: 'archived-event', interested: 1 }] })
-    for (const [sql] of query.mock.calls) {
-      expect(sql).not.toMatch(/published|starts_at|ends_at|educator_verified_at|member_cards|JOIN users/)
-    }
+    expect(query.mock.calls[0][0]).toContain('u.work_email verified_school_email')
+    expect(query.mock.calls[0][0]).toContain('LEFT JOIN users u ON u.id=s.user_id')
+    for (const [sql] of query.mock.calls) expect(sql).not.toMatch(/published|starts_at|ends_at|educator_verified_at|member_cards/)
     expect(query.mock.calls.every(([sql]) => /^SELECT/.test(sql.trim()))).toBe(true)
   })
 })

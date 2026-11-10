@@ -27,6 +27,7 @@ import {
   ArrowRight,
   BookmarkSimple,
   Buildings,
+  CaretDown,
   CheckCircle,
   Clock,
   Compass,
@@ -50,6 +51,7 @@ import { api, ApiError, del, patch, post } from "./lib/api"
 import { acquireDealLocation, DealLocationError, LOCATION_PERMISSION_HELP, locationDenialMessage } from "./lib/deal-location"
 
 import {
+  AnimatedSurface,
   AboutPage,
   AdminLaunchPanel,
   CityAlert,
@@ -92,11 +94,18 @@ import {
   ADMIN_SECTIONS,
   AddLocationContent,
   CategorySelect,
+  OfferMarketSelect,
   WeeklyHoursEditor,
   readDraft,
 } from "./AdminWorkspace"
 
 import { withOpeningStatus, type WeeklyHours } from "../shared/business-hours"
+import {
+  DEFAULT_DISCOVER_MARKET,
+  DISCOVER_MARKETS,
+  findDiscoverMarket,
+  type DiscoverMarket,
+} from "../shared/discover-markets"
 import { normalizeUsCity } from "../shared/us-city"
 
 import { useOpeningStatus } from "./lib/business-hours"
@@ -2440,42 +2449,88 @@ function DealCard({
   )
 }
 
+const DISCOVER_MARKET_STORAGE_KEY = "teachersvip-discover-market"
+
 function Discover({ user }: { user: SessionUser }) {
+  const [market, setMarket] = useState(() => {
+    try {
+      return findDiscoverMarket(localStorage.getItem(DISCOVER_MARKET_STORAGE_KEY)) ?? DEFAULT_DISCOVER_MARKET
+    } catch {
+      return DEFAULT_DISCOVER_MARKET
+    }
+  })
+
+  const chooseMarket = (id: string) => {
+    const next = findDiscoverMarket(id)
+    if (!next) return
+    setMarket(next)
+    try {
+      localStorage.setItem(DISCOVER_MARKET_STORAGE_KEY, next.id)
+    } catch {
+      // Browsing still works when storage is unavailable.
+    }
+  }
+
+  return (
+    <Page title="Discover Deals">
+      <section className="hero">
+        <div className="hero-copy">
+          <h2>
+            Support local.
+            <br />
+            Save more.
+          </h2>
+          <p>Browse in-person and online offers made for educators.</p>
+        </div>
+      </section>
+      <label className="discover-market-picker">
+        <MapPin size={20} aria-hidden="true" />
+        <span aria-hidden="true">Exploring <strong>{market.label}</strong></span>
+        <CaretDown size={16} aria-hidden="true" />
+        <select
+          aria-label="Discover market"
+          value={market.id}
+          onChange={(event) => chooseMarket(event.target.value)}
+        >
+          {DISCOVER_MARKETS.map(({ id, label }) => (
+            <option key={id} value={id}>{label}</option>
+          ))}
+        </select>
+      </label>
+      <MarketDeals key={market.id} market={market} user={user} />
+    </Page>
+  )
+}
+
+function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUser }) {
   const navigate = useNavigate()
 
   const [deals, setDeals] = useState<Deal[]>([]),
     [q, setQ] = useState(""),
     [category, setCategory] = useState("All"),
+    [loadError, setLoadError] = useState(""),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true)
 
-  const load = () =>
-    api<{ deals: Deal[] }>("/deals")
-
-      .then((r) => {
-        setDeals(r.deals)
-
-        r.deals.forEach(
-          (d) =>
-            void post("/analytics/events", {
-              eventType: "business_listing_view",
-
-              businessId: d.business_id,
-
-              dealId: d.id,
-
-              idempotencyKey: `view-${d.id}-${new Date().toISOString().slice(0, 10)}`,
-            }),
-        )
-      })
-
-      .catch((e) => setError(e.message))
-
-      .finally(() => setLoading(false))
-
   useEffect(() => {
-    void load()
-  }, [])
+    const controller = new AbortController()
+    void api<{ deals: Deal[] }>(`/deals?market=${encodeURIComponent(market.id)}`, { signal: controller.signal })
+      .then((r) => {
+        if (controller.signal.aborted) return
+        setDeals(r.deals)
+        for (const deal of r.deals) {
+          void post("/analytics/events", {
+            eventType: "business_listing_view",
+            businessId: deal.business_id,
+            dealId: deal.id,
+            idempotencyKey: `view-${deal.id}-${new Date().toISOString().slice(0, 10)}`,
+          }).catch(() => {})
+        }
+      })
+      .catch((e) => { if (!controller.signal.aborted) setLoadError(e.message) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [market.id])
 
   const categories = [
       "All",
@@ -2510,6 +2565,9 @@ function Discover({ user }: { user: SessionUser }) {
     activeDeals = orderedDeals.filter((d) => !d.used),
     activatedDeals = orderedDeals.filter((d) => d.used)
 
+  const loaded = !loading && !loadError
+  const comingSoon = loaded && deals.length === 0 && market.id !== DEFAULT_DISCOVER_MARKET.id
+
   const toggle = async (deal: Deal) => {
     try {
       deal.saved
@@ -2525,17 +2583,7 @@ function Discover({ user }: { user: SessionUser }) {
   }
 
   return (
-    <Page title="Discover Deals">
-      <section className="hero">
-        <div className="hero-copy">
-          <h2>
-            Support local.
-            <br />
-            Save more.
-          </h2>
-          <p>Browse in-person and online offers made for educators.</p>
-        </div>
-      </section>
+    <>
       <div className="discovery-tools">
         <label className="search-wrap">
           <MagnifyingGlass size={20} />
@@ -2558,7 +2606,7 @@ function Discover({ user }: { user: SessionUser }) {
           ))}
         </div>
       </div>
-      {error && <Notice kind="error">{error}</Notice>}
+      {(loadError || error) && <Notice kind="error">{loadError || error}</Notice>}
       {loading ? (
         <DealSkeletons />
       ) : (
@@ -2566,7 +2614,7 @@ function Discover({ user }: { user: SessionUser }) {
           {activeDeals.length > 0 && (
             <section className="deal-section">
               <div className="section-heading">
-                <h2>Available Deals</h2>
+                <h2>Available Deals in {market.name}</h2>
                 <span>{activeDeals.length}</span>
               </div>
               <section className="deal-grid">
@@ -2607,27 +2655,29 @@ function Discover({ user }: { user: SessionUser }) {
           )}
         </>
       )}
-      {!loading && !shown.length && (
+      {loaded && !comingSoon && !shown.length && (
         <Empty
-          title="No matching deals"
-          text="Try a different search or category."
+          title={deals.length ? "No matching deals" : `No deals available in ${market.name}`}
+          text={deals.length ? "Try a different search or category." : "Check back for new offers."}
         />
       )}
-      {!user.is_demo && !loading &&
-        !deals.some(
-          (deal) =>
-            deal.channel === "in_person" &&
-            deal.address
-              ?.toLowerCase()
-              .includes(`, ${user.city.split(",")[0].trim().toLowerCase()},`),
-        ) && (
-          <CityAlert
-            city={user.city}
-            email={user.offers_email || user.work_email || user.personal_email}
-          />
-        )}
-      {!user.is_demo && <SuggestBusiness city={user.city} />}
-    </Page>
+      {loaded && (comingSoon || !user.is_demo) && (
+        <AnimatedSurface className="launch-panel">
+          {comingSoon && <h2>Coming Soon in {market.name}</h2>}
+          {user.is_demo ? (
+            <p>Local deals and events will appear here when available.</p>
+          ) : (
+            <CityAlert
+              market={market}
+              email={user.offers_email || user.work_email || user.personal_email}
+              comingSoon={comingSoon}
+            />
+          )}
+          {comingSoon && !user.is_demo && <SuggestBusiness market={market} />}
+        </AnimatedSurface>
+      )}
+      {loaded && !comingSoon && !user.is_demo && <SuggestBusiness market={market} />}
+    </>
   )
 }
 
@@ -4333,6 +4383,8 @@ function BusinessApplicationReview({
 
           dealCategory: data.get("dealCategory"),
 
+          market: data.get("market"),
+
           restrictions: data.get("restrictions"),
 
           estimatedSavingsCents: Math.round(
@@ -4536,6 +4588,7 @@ function BusinessApplicationReview({
                     type="datetime-local"
                   />
                 </div>
+                <OfferMarketSelect />
                 <label className="check">
                   <input name="publish" type="checkbox" />
                   <span>
@@ -4893,6 +4946,8 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
         id: d.get("id"),
 
         businessId: d.get("businessId"),
+
+        market: d.get("market"),
 
         title: d.get("title"),
 
@@ -5306,6 +5361,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
               Select an existing business, or <a href="#business-details">add a business above</a>.
               A newly saved business is selected here automatically.
             </p>
+            <OfferMarketSelect />
             {!interestOffer && offerChannel === "in_person" && (
               <label className="field">
                 <span>Participating locations (in-person)</span>
