@@ -281,6 +281,21 @@ h1, h2 { font-family: Oswald, sans-serif; }
 }
 @media (min-width: 1300px) { .deal-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 @media (max-width: 640px) { .hero { min-height: 0; padding: 22px; }.hero-copy { max-width: 100%; } }
+@media (max-width: 639px) {
+  .page:has(> .hero) { padding-top: 10px; padding-bottom: 96px; }
+  .page:has(> .hero) > .page-heading { margin-bottom: 10px; }
+  .page:has(> .hero) > .page-heading > div > span { display: none; }
+  .page:has(> .hero) > .page-heading h1 { margin: 0; font-size: 25px; line-height: 1.15; }
+  .page:has(> .hero) > .hero { padding: 18px 20px; margin-bottom: 12px; border-radius: 20px; }
+  .page:has(> .hero) > .hero h2 { margin-bottom: 6px; font-size: 30px; }
+  .page:has(> .hero) > .hero p { font-size: 14px; line-height: 1.4; }
+  .page:has(> .hero) .discover-market-picker { min-height: 46px; margin-bottom: 10px; padding-block: 8px; }
+  .page:has(> .hero) .discovery-tools { gap: 9px; margin-bottom: 12px; }
+  .page:has(> .hero) .search-wrap { min-height: 46px; }
+  .page:has(> .hero) .chips button { min-height: 40px; padding-block: 7px; }
+  .page:has(> .hero) .section-heading { margin-bottom: 9px; }
+  .page:has(> .hero) .section-heading h2 { font-size: 20px; }
+}
 @media (max-width: 460px) { .auth-page { padding: 0; }.auth-card { min-height: 100dvh; border: 0; border-radius: 0; padding: 25px 20px; }.two { grid-template-columns: 1fr; }.page { padding-inline: 16px; }.topbar { padding-inline: 16px; }.stats { grid-template-columns: repeat(2,1fr); }.stats strong { font-size: 19px; }.card-footer { align-items: flex-start; flex-direction: column; }.page-heading { align-items: flex-start; flex-direction: column; }.detail-copy { padding: 22px 24px 26px; }.image-card-action { inset: auto 12px 12px; }.admin-card { padding: 17px; border-radius: 18px; }.admin-intro { padding: 19px; }.admin-intro > svg { width: 30px; }.admin-row { grid-template-columns: 1fr auto; }.admin-row .admin-status { grid-column: 2; grid-row: 1; }.admin-row .action { grid-column: 2; grid-row: 2; }.admin-row > div { grid-column: 1; grid-row: 1 / span 2; }.admin-preview-panel .admin-card-heading { flex-wrap: wrap; }.admin-preview-panel .admin-card-heading .action { width: auto; } }
 @media (max-width: 899px) { .deal-detail { margin-bottom: 96px; }.deal-sticky-action { position: fixed; inset: auto 16px calc(72px + env(safe-area-inset-bottom) + 12px); z-index: 24; width: auto; }.deal-sticky-action .action { box-shadow: 0 14px 32px #06101e4d; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition: none !important; } }
