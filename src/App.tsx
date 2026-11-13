@@ -103,7 +103,6 @@ import { withOpeningStatus, type WeeklyHours } from "../shared/business-hours"
 import {
   DEFAULT_DISCOVER_MARKET,
   DISCOVER_MARKETS,
-  findDiscoverMarket,
   type DiscoverMarket,
 } from "../shared/discover-markets"
 import { normalizeUsCity } from "../shared/us-city"
@@ -844,9 +843,9 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
           <div className="creator-form-success" role="status">
             <CheckCircle size={42} weight="fill" />
             <span className="public-eyebrow">One more step</span>
-            <h1>Confirm your educator email.</h1>
+            <h1>Confirm your email.</h1>
             <p>
-              We sent a confirmation link to the educator email you entered.
+              We sent a confirmation link to the email you entered.
               Your submission is not accepted or visible to the admin team until
               you use that link.
             </p>
@@ -875,7 +874,7 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
                   <p>
                     {verifiedMember
                       ? "Your verified member email is already confirmed. This submission remains private."
-                      : "Confirm your educator email after submitting. Until then, your details remain private and are not visible to the admin team."}
+                      : "Confirm your email after submitting. Until then, your details remain private and are not visible to the admin team."}
                   </p>
                 </div>
               </div>
@@ -886,7 +885,7 @@ function CreatorNetworkPage({ user }: { user?: SessionUser }) {
               <div className="two">
                 <div>
                   <Field
-                    label="Educator email"
+                    label="Email"
                     name="educatorEmail"
                     type="email"
                     required
@@ -2454,14 +2453,15 @@ const DISCOVER_MARKET_STORAGE_KEY = "teachersvip-discover-market"
 function Discover({ user }: { user: SessionUser }) {
   const [market, setMarket] = useState(() => {
     try {
-      return findDiscoverMarket(localStorage.getItem(DISCOVER_MARKET_STORAGE_KEY)) ?? DEFAULT_DISCOVER_MARKET
+      const savedMarket = localStorage.getItem(DISCOVER_MARKET_STORAGE_KEY)
+      return DISCOVER_MARKETS.find(market => market.id === savedMarket) ?? DEFAULT_DISCOVER_MARKET
     } catch {
       return DEFAULT_DISCOVER_MARKET
     }
   })
 
   const chooseMarket = (id: string) => {
-    const next = findDiscoverMarket(id)
+    const next = DISCOVER_MARKETS.find(market => market.id === id)
     if (!next) return
     setMarket(next)
     try {

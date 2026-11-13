@@ -33,7 +33,7 @@ import { registerOfferInterestRoutes } from "./deals/interests.js"
 import { rsvpConfirmationEmail } from "./emails/rsvp-confirmation.js"
 import { normalizeUsCity } from "../shared/us-city.js"
 import { isValidTimezone, withOpeningStatus } from "../shared/business-hours.js"
-import { DEFAULT_DISCOVER_MARKET, DISCOVER_MARKETS, findDiscoverMarket } from "../shared/discover-markets.js"
+import { DEFAULT_DISCOVER_MARKET, DISCOVER_MARKETS, LEGACY_DISCOVER_MARKET, findDiscoverMarket } from "../shared/discover-markets.js"
 
 const hoursIntervalSchema = z.object({
   open: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -51,7 +51,7 @@ const usCitySchema = z.string().trim().min(2).max(100).transform((value, ctx) =>
   return z.NEVER
 })
 const offersEmailSchema = z.email().max(254).transform(value => value.toLowerCase()).nullable().optional()
-const discoverMarketSchema = z.enum(DISCOVER_MARKETS.map(market => market.id))
+const discoverMarketSchema = z.enum([...DISCOVER_MARKETS.map(market => market.id), LEGACY_DISCOVER_MARKET.id])
 const feedbackLocationSchema = z.union([
   z.object({ market: discoverMarketSchema }),
   z.object({ market: z.undefined().optional(), city: usCitySchema }),
