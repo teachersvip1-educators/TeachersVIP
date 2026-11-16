@@ -73,6 +73,13 @@ export const ADMIN_SECTIONS = [
   },
 
   {
+    path: "catering",
+    label: "Catering",
+    description: "Catering partners, educator perks and school quote requests",
+    icon: Storefront,
+  },
+
+  {
     path: "activity",
     label: "Activity & Analytics",
     description: "Activations, interested educators and platform analytics",

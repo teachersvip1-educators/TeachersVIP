@@ -30,6 +30,8 @@ import {
 } from "./verification/index.js"
 import { activateDeal } from "./deals/activation.js"
 import { registerOfferInterestRoutes } from "./deals/interests.js"
+import { registerCateringRoutes } from "./catering.js"
+import { cateringRequestEmail } from "./emails/catering-request.js"
 import { rsvpConfirmationEmail } from "./emails/rsvp-confirmation.js"
 import { normalizeUsCity } from "../shared/us-city.js"
 import { isValidTimezone, withOpeningStatus } from "../shared/business-hours.js"
@@ -695,7 +697,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   app.get("/health/ready", async (_request, reply) => {
     try {
       const schema = await db.query<{ ready: boolean }>(
-        "SELECT to_regclass('public.city_deal_alerts') IS NOT NULL AND to_regclass('public.business_review_comments') IS NOT NULL AND to_regclass('public.offer_interest_submissions') IS NOT NULL AS ready",
+        "SELECT to_regclass('public.city_deal_alerts') IS NOT NULL AND to_regclass('public.business_review_comments') IS NOT NULL AND to_regclass('public.offer_interest_submissions') IS NOT NULL AND to_regclass('public.catering_profiles') IS NOT NULL AND to_regclass('public.catering_requests') IS NOT NULL AS ready",
       )
       if (!schema.rows[0]?.ready) throw new Error('Launch schema is unavailable')
       return { status: "ready" }
@@ -3504,6 +3506,18 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       db.query(`SELECT d.id,d.title,count(*)::int saves FROM saved_deals s JOIN deals d ON d.id=s.deal_id GROUP BY d.id,d.title ORDER BY saves DESC LIMIT 10`),
     ])
     return { totals: totals.rows[0], cities: cities.rows, viewed: viewed.rows, saved: saved.rows }
+  })
+
+  registerCateringRoutes(app, db, requireVerified, requireSuperadmin, async (request) => {
+    if (!resend) return false
+    const { error } = await resend.emails.send({
+      from: config.RESEND_FROM_EMAIL,
+      to: request.quote_email,
+      replyTo: request.contact_email,
+      ...cateringRequestEmail(request),
+    }, { idempotencyKey: `catering-request/${request.id}` })
+    if (error) throw error
+    return true
   })
 
   registerOfferInterestRoutes(app, db, requireVerified, requireSuperadmin, async (submission, idempotencyKey) => {

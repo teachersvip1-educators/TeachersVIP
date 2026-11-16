@@ -4,6 +4,8 @@ export const BUSINESS_CATEGORIES = [
   "Coffee",
   "Retail",
   "Services",
+  "Catering",
+  "Sports & Events",
   "Online",
   "Win",
 ] as const

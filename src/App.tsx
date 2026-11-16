@@ -1,5 +1,7 @@
 import { AdminBusiness } from "./AdminBusiness"
 import { AdminApprovedEducators } from "./AdminEducators"
+import Catering, { AdminCatering } from "./Catering"
+import UpcomingPartners, { upcomingPartnersFor } from "./UpcomingPartners"
 import {
   useCallback,
   useEffect,
@@ -2228,7 +2230,7 @@ function Shell({
         <Logo light />
         <nav>
           {links.map(({ to, label, Icon }) => (
-            <NavLink key={to} to={to}>
+            <NavLink key={to} to={to} className={({ isActive }) => isActive || (to === "/deals" && location.pathname === "/catering") ? "active" : ""}>
               <Icon size={20} weight="duotone" />
               {label}
             </NavLink>
@@ -2274,14 +2276,14 @@ function Shell({
             <NavLink
               key={to}
               to={to}
-              className={`${location.pathname.startsWith(to) ? "active" : ""} ${
+              className={`${location.pathname.startsWith(to) || (to === "/deals" && location.pathname === "/catering") ? "active" : ""} ${
                 to === "/vip-card" ? "vip-nav" : ""
               }`}
             >
               <span className="nav-icon">
                 <Icon
                   size={23}
-                  weight={location.pathname.startsWith(to) ? "fill" : "regular"}
+                  weight={location.pathname.startsWith(to) || (to === "/deals" && location.pathname === "/catering") ? "fill" : "regular"}
                 />
               </span>
               <span>{label}</span>
@@ -2537,9 +2539,13 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
 
       "Food & Drink",
 
+      "Catering",
+
       "Shopping",
 
       "Services",
+
+      "Sports & Events",
 
       "Online",
 
@@ -2566,6 +2572,7 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
     activatedDeals = orderedDeals.filter((d) => d.used)
 
   const loaded = !loading && !loadError
+  const upcomingCount = upcomingPartnersFor(category, q).length
   const comingSoon = loaded && deals.length === 0 && market.id !== DEFAULT_DISCOVER_MARKET.id
 
   const toggle = async (deal: Deal) => {
@@ -2595,7 +2602,9 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
           />
         </label>
         <div className="chips">
-          {categories.map((c) => (
+          {categories.map((c) => c === "Catering" ? (
+            <Link className="catering-category-link" key={c} to={`/catering?market=${encodeURIComponent(market.id)}`}>Catering <ArrowRight size={14} aria-hidden="true" /></Link>
+          ) : (
             <button
               className={category === c ? "active" : ""}
               key={c}
@@ -2655,7 +2664,8 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
           )}
         </>
       )}
-      {loaded && !comingSoon && !shown.length && (
+      <UpcomingPartners category={category} search={q} />
+      {loaded && !comingSoon && !shown.length && !upcomingCount && (
         <Empty
           title={deals.length ? "No matching deals" : `No deals available in ${market.name}`}
           text={deals.length ? "Try a different search or category." : "Check back for new offers."}
@@ -7107,6 +7117,12 @@ function AdminRouter({ userId }: { userId: string }) {
       <AdminUnassignedRegistrations />
     </Page>
 
+  if (view === "catering")
+    return <Page title="Catering">
+      <AdminNavigation section="catering" />
+      <AdminCatering />
+    </Page>
+
   if (["overview", "businesses-deals", "requests-messages"].includes(view))
     return <AdminPage key={view} userId={userId} view={view} />
 
@@ -7193,6 +7209,7 @@ function AppRoutes() {
           element={<Verify user={user} refresh={refresh} onSignOut={() => signOut("/")} />}
         />
         <Route path="/deals" element={<Discover user={user} />} />
+        <Route path="/catering" element={<Page title="Catering"><Catering user={user} /></Page>} />
         <Route
           path="/deals/:id"
           element={<ActivationDealDetail user={user} />}

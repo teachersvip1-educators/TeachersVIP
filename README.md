@@ -54,6 +54,14 @@ The activation dashboard can be filtered by date, business, and location. Its re
 
 Browser geolocation is a useful proximity control, not tamper-proof proof of presence. Exact submitted coordinates are encrypted and retained for a short audit window (30 days by default); the scheduled purge removes them while preserving the selected location, distance, accuracy, outcome, and aggregate reporting fields.
 
+## Catering and upcoming partners
+
+Discover includes a **Catering** button that opens a city-specific directory for staff meals, meetings and school events. A published business can also have a catering profile without changing its existing category. Under **Admin → Catering**, select an existing business, add its service area, educator perk, minimum guests, lead time, delivery options and catering contact email, then publish the profile. The business must also be published. No catering partners are seeded without reviewed details.
+
+Verified educators can submit a **Request a Quote** form to one listed business. Requests capture the school, event, headcount, budget, location, dietary requirements and contact details with explicit sharing consent. They are saved before a transactional notification is attempted through the existing Resend configuration; the business replies to the submitted contact email. Provider failure preserves the request in Admin for follow-up, and retrying the same submission does not duplicate it. Admins can mark requests new, contacted or closed. These are enquiries and do not count as orders, RSVPs or offer activations. The demo account remains read-only.
+
+The supplied Blue Wavy Car Wash, Juiceland Juice Bar, Spa Delight and Sports, Events & Entertainment artwork appears as **Coming soon** announcements in Discover. Locations and launch details are not yet assigned. The planned discounts are not redeemable offers. Sports & Events also has its own category filter.
+
 ## Business onboarding
 
 The application asks a business for:
