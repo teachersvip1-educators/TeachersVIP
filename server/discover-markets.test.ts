@@ -119,4 +119,29 @@ describe("Discover market catalog and interest", () => {
     const { rows } = await query("SELECT business_name,city FROM business_suggestions WHERE id=$1", [suggested.json().id])
     expect(rows).toEqual([{ business_name: "Local Bookshop", city: "Dallas–Fort Worth, TX" }])
   })
+
+  it("generates business and offer IDs when the admin does not supply them", async () => {
+    const business = {
+      name: "Pickle Mania & Café", category: "Sports & Events", description: "Downtown pickleball facility.",
+      imageUrl: "/teachersvip-logo.png", timezone: "America/Chicago",
+    }
+    const first = await request("POST", "/api/admin/businesses", business, adminToken)
+    expect(first.statusCode, first.body).toBe(200)
+    expect(first.json().businessId).toBe("pickle-mania-and-cafe")
+    const second = await request("POST", "/api/admin/businesses", business, adminToken)
+    expect(second.json().businessId).toBe("pickle-mania-and-cafe-2")
+
+    const deal = {
+      businessId: "pickle-mania-and-cafe", title: "15% OFF for All Educators", ctaType: "rsvp", channel: "in_person",
+      category: "Sports & Events", description: "Show your teacher ID.", restrictions: "Educators only",
+      estimatedSavingsCents: 0, market: "miami",
+    }
+    const created = await request("POST", "/api/admin/deals", deal, adminToken)
+    expect(created.statusCode, created.body).toBe(200)
+    expect(created.json().dealId).toBe("pickle-mania-and-cafe-15-off-for-all-educators")
+    expect((await request("POST", "/api/admin/deals", deal, adminToken)).json().dealId)
+      .toBe("pickle-mania-and-cafe-15-off-for-all-educators-2")
+    const rejected = await request("POST", "/api/admin/deals", { ...deal, id: "Pickle-ball-26" }, adminToken)
+    expect(rejected.statusCode).toBe(400)
+  })
 })

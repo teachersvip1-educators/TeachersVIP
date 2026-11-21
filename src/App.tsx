@@ -4646,7 +4646,13 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
 
   const draftKey = `teachersvip:deal-draft:${userId}`
 
-  const [savedDeal] = useState(() => readDraft(draftKey))
+  const [savedDeal] = useState(() => {
+    const draft = readDraft(draftKey)
+    const requested = params.get("businessId")
+    return requested && draft.businessId && draft.businessId !== requested
+      ? {}
+      : draft
+  })
 
   const dealForm = useRef<HTMLFormElement>(null)
 
@@ -4780,7 +4786,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
 
   useEffect(() => {
     if (
-      view !== "add-business" ||
+      view !== "create-deal" ||
       !businesses.length ||
       !dealForm.current ||
       restoredDeal.current
@@ -4813,7 +4819,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
   }, [businesses.length, view, savedDeal])
 
   useEffect(() => {
-    if (view === "add-business" && restoredDeal.current) saveDealDraft()
+    if (view === "create-deal" && restoredDeal.current) saveDealDraft()
   }, [dealImage, offerBusinessId])
 
   useEffect(() => {
@@ -4851,8 +4857,6 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
       const addedBusiness = await post<{ businessId: string }>(
         "/admin/businesses",
         {
-          id: d.get("id"),
-
           name: d.get("name"),
 
           category: d.get("category"),
@@ -4896,16 +4900,14 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
 
       setHoursReset((current) => current + 1)
 
-      setBusinessMessage("Business added successfully.")
+      try {
+        sessionStorage.removeItem(draftKey)
+      } catch {
+        /* Optional storage. */
+      }
 
-      setOfferBusinessId(addedBusiness.businessId || String(d.get("id")))
-      setBusinessMessage("Business added. Continue below to create its deal, or return to Business Partners.")
-      window.setTimeout(() => dealForm.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100)
-
-      await load().catch(() =>
-        setBusinessMessage(
-          "Business added successfully. Refresh the page to update the inventory.",
-        ),
+      navigate(
+        `/admin/deals/new?businessId=${encodeURIComponent(addedBusiness.businessId)}&created=1`,
       )
     } catch (e) {
       setBusinessError((e as Error).message)
@@ -4952,8 +4954,6 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
         eventName: d.get("eventName") || null,
         eventDateTime: d.get('eventDateTime') || null,
         eventLocation: d.get('eventLocation') || null,
-
-        id: d.get("id"),
 
         businessId: d.get("businessId"),
 
@@ -5016,7 +5016,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
       form.reset()
 
       setCtaType("use_deal")
-      setOfferBusinessId("")
+      setOfferBusinessId(params.get("businessId") || "")
       setOfferChannel("in_person")
 
       setDealImage(null)
@@ -5081,6 +5081,21 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
     }
   }
 
+  const hasVerifiedLocation = (business?: AdminBusiness | null) =>
+    Boolean(
+      business?.locations?.some(
+        (location) => location.latitude !== null && location.longitude !== null,
+      ),
+    )
+
+  const offerBusiness =
+    businesses.find((business) => business.id === offerBusinessId) || null
+
+  const lockedBusiness =
+    view === "create-deal" && params.get("businessId")
+      ? businesses.find((business) => business.id === params.get("businessId")) || null
+      : null
+
   const toggleBusiness = async (business: AdminBusiness) => {
     try {
       await patch(`/admin/businesses/${business.id}`, {
@@ -5098,6 +5113,8 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
       title={
         view === "add-business"
           ? "Add Business"
+          : view === "create-deal"
+            ? "Create Deal"
             : view === "requests-messages"
               ? "Requests & Messages"
               : view === "overview"
@@ -5166,7 +5183,16 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
           </section>
         </>
       )}
-      {view === "add-business" && <p className="admin-empty">Add the business, then create its deal below with all offer and redemption questions. You can also create a deal for an existing partner.</p>}
+      {view === "add-business" && <p className="admin-empty">Step 1 of 2. Add the business here. After you save it, you go straight to creating its first deal.</p>}
+      {view === "create-deal" && params.get("created") === "1" && lockedBusiness && !dealMessage && (
+        <Notice kind="success">
+          {lockedBusiness.name} was added
+          {hasVerifiedLocation(lockedBusiness)
+            ? " and its address was found on the map, so in-person deals are ready to use."
+            : "."}{" "}
+          Step 2 of 2: create its first deal below, or return to Business Partners to do it later.
+        </Notice>
+      )}
       <section className="admin-forms admin-single-form">
         {view === "add-business" && (
           <form
@@ -5184,17 +5210,6 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
                 <p>Create the business record first.</p>
               </div>
             </div>
-            <Field
-              label="URL slug"
-              name="id"
-              placeholder="bright-cafe"
-              pattern="[a-z0-9-]+"
-              maxLength={80}
-              required
-            />
-            <small className="field-note">
-              Use lowercase letters, numbers and hyphens for the URL slug.
-            </small>
             <Field
               label="Business name"
               name="name"
@@ -5244,7 +5259,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
             </div>
             <div className="three">
               <Field
-                label="Latitude"
+                label="Latitude (optional)"
                 name="latitude"
                 type="number"
                 min={-90}
@@ -5252,7 +5267,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
                 step="any"
               />
               <Field
-                label="Longitude"
+                label="Longitude (optional)"
                 name="longitude"
                 type="number"
                 min={-180}
@@ -5270,8 +5285,12 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
               />
             </div>
             <small className="field-note">
-              Coordinates are optional when adding a business. Supply both
-              together to enable location verification for in-person deals.
+              In-person deals need a map position so educators can be verified on
+              site. Enter the full street address and leave latitude and
+              longitude blank: they are looked up from the address when you
+              save. If the address cannot be found you will be told on the next
+              step, and can enter both numbers yourself (in Google Maps,
+              right-click the spot and copy the two numbers shown).
             </small>
             <WeeklyHoursEditor
               key={`business-hours-${hoursReset}`}
@@ -5288,11 +5307,11 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
               <Notice kind="success">{businessMessage}</Notice>
             )}
             <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Add Business"}
+              {busy ? "Saving…" : "Save Business and Continue"}
             </Button>
           </form>
         )}
-        {view === "add-business" && (
+        {view === "create-deal" && (
           <form
             id="deal-details"
             className="admin-card form-grid"
@@ -5308,14 +5327,7 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
                 <p>New deals publish immediately after saving.</p>
               </div>
             </div>
-            <Field
-              label="Deal ID"
-              name="id"
-              placeholder="bright-cafe-15"
-              pattern="[a-z0-9-]+"
-              maxLength={100}
-              required
-            />
+            
             <label className="field">
               <span>CTA type</span>
               <select
@@ -5349,30 +5361,61 @@ function AdminPage({ userId, view }: { userId: string; view: string }) {
                 </Notice>
               </>
             )}
-            <label className="field">
-              <span>Business</span>
-              <select
-                name="businessId"
-                required
-                value={offerBusinessId}
-                onChange={(event) => setOfferBusinessId(event.target.value)}
-              >
-                <option value="" disabled>
-                  Select a business
-                </option>
-                {businesses.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="field-note">
-              Select an existing business, or <a href="#business-details">add a business above</a>.
-              A newly saved business is selected here automatically.
-            </p>
+            {lockedBusiness ? (
+              <div className="field">
+                <span>Business</span>
+                <input type="hidden" name="businessId" value={lockedBusiness.id} />
+                <strong>{lockedBusiness.name}</strong>
+                <small className="field-note">
+                  This deal is for {lockedBusiness.name}.{" "}
+                  <Link to="/admin/deals/new" onClick={() => setOfferBusinessId("")}>
+                    Choose a different business
+                  </Link>
+                </small>
+              </div>
+            ) : (
+              <>
+                <label className="field">
+                  <span>Business</span>
+                  <select
+                    name="businessId"
+                    required
+                    value={offerBusinessId}
+                    onChange={(event) => setOfferBusinessId(event.target.value)}
+                  >
+                    <option value="" disabled>
+                      Select a business
+                    </option>
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                        {businesses.some((other) => other.id !== b.id && other.name === b.name) ? ` (${b.id})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="field-note">
+                  Select an existing business, or{" "}
+                  <Link to="/admin/businesses/new">add a new business</Link> first.
+                </p>
+              </>
+            )}
             <OfferMarketSelect />
-            {!interestOffer && offerChannel === "in_person" && (
+            {!interestOffer && offerChannel === "in_person" && offerBusiness && !hasVerifiedLocation(offerBusiness) && (
+              <Notice kind="error">
+                {offerBusiness.name} has no location with a map position yet, so
+                an in-person Use Deal offer cannot be published for it.{" "}
+                <Link
+                  to={`/admin/locations/new?businessId=${encodeURIComponent(offerBusinessId)}&returnTo=/admin/deals/new`}
+                  onClick={saveDealDraft}
+                >
+                  Add a location with its street address
+                </Link>{" "}
+                and come back (what you typed here is kept), or set Channel to
+                Online if this deal is not redeemed on site.
+              </Notice>
+            )}
+            {!interestOffer && offerChannel === "in_person" && hasVerifiedLocation(offerBusiness) && (
               <label className="field">
                 <span>Participating locations (in-person)</span>
                 <select
@@ -7100,7 +7143,7 @@ function AdminRouter({ userId }: { userId: string }) {
       <AdminBusiness key={view} id={decodeURIComponent(businessRoute[1])} editing={Boolean(businessRoute[2])} />
     </Page>
   if (view === "deals/new")
-    return <Navigate to={`/admin/businesses/new${window.location.search}#deal-details`} replace />
+    return <AdminPage key={view} userId={userId} view="create-deal" />
 
   if (view === "locations/new")
     return (

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createCitySearch, resolveMapboxSuggestion } from './city-search'
+import { createCitySearch, geocodeStreetAddress, resolveMapboxSuggestion } from './city-search'
 import { getConfig } from './config'
 
 const base = getConfig({
@@ -52,6 +52,25 @@ describe('city search', () => {
       id: 'address.1', label: '1600 Pennsylvania Avenue NW, Washington, DC, United States',
       provider: 'mapbox', latitude: 38.8977, longitude: -77.0365, timezone: 'America/New_York',
     })
+  })
+
+  it('geocodes an admin-typed street address and rejects weak or unavailable matches', async () => {
+    const feature = (confidence: string) => ({ features: [{
+      id: 'address.9', properties: { full_address: '1201 Main Street, Houston, Texas 77002, United States', match_code: { confidence } },
+      geometry: { coordinates: [-95.3655, 29.7556] },
+    }] })
+    const fetcher = (confidence: string) => vi.fn(async (url: URL) => {
+      expect(url.searchParams.get('types')).toBe('address,secondary_address')
+      expect(url.searchParams.get('permanent')).toBe('true')
+      return new Response(JSON.stringify(feature(confidence)), { status: 200 })
+    }) as unknown as typeof fetch
+    await expect(geocodeStreetAddress(base, ' 1201 Main St, Houston TX ', fetcher('exact'))).resolves.toMatchObject({
+      latitude: 29.7556, longitude: -95.3655, timezone: 'America/Chicago',
+    })
+    await expect(geocodeStreetAddress(base, '1201 Main St, Houston TX', fetcher('low'))).resolves.toBeNull()
+    const unused = fetcher('exact')
+    await expect(geocodeStreetAddress({ ...base, MAPBOX_PUBLIC_TOKEN: undefined }, '1201 Main St, Houston TX', unused)).resolves.toBeNull()
+    expect(unused).not.toHaveBeenCalled()
   })
 
   it('allows manual entry when no provider is configured', async () => {

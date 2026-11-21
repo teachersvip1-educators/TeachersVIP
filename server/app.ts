@@ -20,7 +20,7 @@ import {
   verifyPassword,
 } from "./security.js"
 import { createPass2UClient } from "./integrations/pass2u.js"
-import { createCitySearch, resolveMapboxSuggestion } from "./city-search.js"
+import { createCitySearch, geocodeStreetAddress, resolveMapboxSuggestion } from "./city-search.js"
 import {
   decideVerification,
   domainLookupCandidates,
@@ -100,6 +100,18 @@ declare module "fastify" {
   interface FastifyRequest {
     currentUser: UserRow | null
   }
+}
+
+function slugify(value: string, max: number) {
+  return value
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, max)
+    .replace(/-+$/, "")
 }
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -1962,16 +1974,33 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     }
   })
 
+  const availableId = async (
+    table: "businesses" | "deals",
+    base: string,
+    max: number,
+  ) => {
+    const root = base || (table === "deals" ? "offer" : "business")
+    for (let attempt = 1; ; attempt++) {
+      const suffix = attempt === 1 ? "" : `-${attempt}`
+      const id =
+        root.slice(0, max - suffix.length).replace(/-+$/, "") + suffix
+      const taken = await db.query(`SELECT 1 FROM ${table} WHERE id=$1`, [id])
+      if (!taken.rows.length) return id
+    }
+  }
+
   app.post("/api/admin/businesses", async (request) => {
     requireSuperadmin(request)
-    const body = parse(
+    const input = parse(
       z
         .object({
           id: z
             .string()
             .trim()
             .regex(/^[a-z0-9-]+$/)
-            .max(80),
+            .max(80)
+            .nullable()
+            .optional(),
           name: z.string().trim().min(2).max(140),
           category: z.string().trim().min(2).max(60),
           description: z.string().trim().min(5).max(1000),
@@ -1994,6 +2023,10 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         ),
       request.body,
     )
+    const body = {
+      ...input,
+      id: input.id || (await availableId("businesses", slugify(input.name, 80), 80)),
+    }
     try {
       new Intl.DateTimeFormat("en-US", { timeZone: body.timezone }).format(
         new Date(),
@@ -2003,6 +2036,12 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         statusCode: 400,
       })
     }
+    const located =
+      body.address && body.latitude == null
+        ? await geocodeStreetAddress(config, body.address)
+        : null
+    const latitude = body.latitude ?? located?.latitude ?? null
+    const longitude = body.longitude ?? located?.longitude ?? null
     const client = await db.connect()
     let businessId = body.id
     try {
@@ -2020,14 +2059,14 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
           body.hours || null,
           body.isOpen ?? null,
           body.address || null,
-          body.latitude ?? null,
-          body.longitude ?? null,
+          latitude,
+          longitude,
           body.openingHours == null ? null : JSON.stringify(body.openingHours),
           body.timezone,
         ],
       )
       businessId = result.rows[0].id
-      if (body.address || body.latitude != null)
+      if (body.address || latitude != null)
         await client.query(
           `INSERT INTO business_locations(id,business_id,location_name,address,timezone,latitude,longitude,geofence_radius_m) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
           [
@@ -2036,8 +2075,8 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
             body.locationName,
             body.address ?? null,
             body.timezone,
-            body.latitude ?? null,
-            body.longitude ?? null,
+            latitude,
+            longitude,
             body.radiusMeters,
           ],
         )
@@ -2057,7 +2096,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
     } finally {
       client.release()
     }
-    return { ok: true, businessId }
+    return { ok: true, businessId, locationVerified: latitude != null }
   })
 
   app.get('/api/admin/businesses/:id/locations', async (request, reply) => {
@@ -2080,6 +2119,9 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       latitude: z.number().min(-90).max(90).nullable().optional(),
       longitude: z.number().min(-180).max(180).nullable().optional(),
     }).refine(value => (value.latitude == null) === (value.longitude == null), { path: ['latitude'], message: 'Latitude and longitude must be supplied together.' }), request.body)
+    const located = body.address && body.latitude == null ? await geocodeStreetAddress(config, body.address) : null
+    const latitude = body.latitude ?? located?.latitude ?? null
+    const longitude = body.longitude ?? located?.longitude ?? null
     const client = await db.connect()
     try {
       await client.query('BEGIN')
@@ -2088,7 +2130,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         await client.query('ROLLBACK')
         return reply.code(404).send({ error: 'Business not found.' })
       }
-      const result = await client.query('INSERT INTO business_locations(id,business_id,location_name,address,timezone,latitude,longitude,geofence_radius_m) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,location_name AS name,address,timezone,latitude,longitude,geofence_radius_m AS "radiusMeters",active', [`${id}:${randomUUID()}`,id,body.name,body.address || null,body.timezone,body.latitude ?? null,body.longitude ?? null,body.radiusMeters])
+      const result = await client.query('INSERT INTO business_locations(id,business_id,location_name,address,timezone,latitude,longitude,geofence_radius_m) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,location_name AS name,address,timezone,latitude,longitude,geofence_radius_m AS "radiusMeters",active', [`${id}:${randomUUID()}`,id,body.name,body.address || null,body.timezone,latitude,longitude,body.radiusMeters])
       await client.query("INSERT INTO admin_audit_log(id,user_id,action,entity_type,entity_id,metadata) VALUES($1,$2,'created','business_location',$3,$4)", [randomUUID(),request.currentUser!.id,result.rows[0].id,JSON.stringify({businessId:id,name:body.name})])
       await client.query('COMMIT')
       return reply.code(201).send({ location: result.rows[0] })
@@ -2153,14 +2195,16 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
 
   app.post("/api/admin/deals", async (request) => {
     requireSuperadmin(request)
-    const body = parse(
+    const input = parse(
       z
         .object({
           id: z
             .string()
             .trim()
             .regex(/^[a-z0-9-]+$/)
-            .max(100),
+            .max(100)
+            .nullable()
+            .optional(),
           businessId: z.string().trim().min(1).max(80),
           market: discoverMarketSchema.default(DEFAULT_DISCOVER_MARKET.id),
           ctaType: z.enum(['use_deal','join_waitlist','rsvp','get_launch_invite']).default('use_deal'),
@@ -2241,6 +2285,16 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
         }),
       request.body,
     )
+    const body = {
+      ...input,
+      id:
+        input.id ||
+        (await availableId(
+          "deals",
+          slugify(`${input.businessId} ${input.title}`, 100),
+          100,
+        )),
+    }
     const method =
       body.redemptionMethod ??
       (body.channel === "online" ? "coupon_code" : "cashier_instruction")
@@ -2341,7 +2395,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
       client.release()
     }
     await sendCityDealAlerts(body.id).catch(error => app.log.error({ error }, 'City alert delivery failed'))
-    return { ok: true }
+    return { ok: true, dealId: body.id }
   })
 
   app.get("/api/admin/deals/:id", async (request, reply) => {
@@ -3535,7 +3589,7 @@ export function buildApp({ config, db }: { config: Config, db: DbPool }) {
   app.setErrorHandler((error: any, request, reply) => {
     app.log.error(error)
     if (error.code === '23505' && ['/api/admin/businesses', '/api/admin/deals'].includes(request.url))
-      return reply.code(409).send({ error: 'This URL slug or offer ID already exists. Choose a different one.', field: 'id' })
+      return reply.code(409).send({ error: 'That business or offer was just saved under the same ID. Please try again.', field: 'id' })
     reply
       .code(error.statusCode ?? 500)
       .send({

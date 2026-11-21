@@ -486,9 +486,11 @@ export function AddLocationContent() {
   return (
     <>
       <p className="admin-screen-help">
-        Add a participating branch for a business. Coordinates are optional
-        here. Supply both together when available; on-site Use Deal verification
-        needs both coordinates.
+        Add a participating branch for a business. Enter the full street
+        address and leave latitude and longitude blank: they are looked up from
+        the address when you save. On-site Use Deal verification needs them, so
+        if the address is not found, enter both numbers yourself (in Google
+        Maps, right-click the spot and copy the two numbers shown).
       </p>
       <Link className="admin-back-link" to={returnTo}>
         ←{" "}
