@@ -120,6 +120,18 @@ describe("Discover market catalog and interest", () => {
     expect(rows).toEqual([{ business_name: "Local Bookshop", city: "Dallas–Fort Worth, TX" }])
   })
 
+  it("lists the Pickle Mania offer in Houston with a verified location", async () => {
+    expect((await request("GET", "/api/deals?market=houston")).json().deals).toContainEqual(
+      expect.objectContaining({ id: "pickle-mania-15-off", business_name: "Pickle Mania", image_url: "/PickleMania.webp" }),
+    )
+    const { rows } = await query(
+      `SELECT b.published,l.latitude,l.longitude FROM deal_locations dl
+       JOIN business_locations l ON l.id=dl.business_location_id JOIN businesses b ON b.id=l.business_id
+       WHERE dl.deal_id='pickle-mania-15-off'`,
+    )
+    expect(rows).toEqual([{ published: true, latitude: 29.7630899, longitude: -95.3645518 }])
+  })
+
   it("generates business and offer IDs when the admin does not supply them", async () => {
     const business = {
       name: "Pickle Mania & Café", category: "Sports & Events", description: "Downtown pickleball facility.",
