@@ -3458,17 +3458,26 @@ function ActivationDealDetail({ user }: { user: SessionUser | null }) {
             </section>
           ) : (
             <div className="flow-actions">
-              <div className="deal-sticky-action">
-                <Button
-                  disabled={!user?.verified || busy}
-                  onClick={() => void activate()}
-                >
-                  {busy
-                    ? deal.channel === "online"
-                      ? "Preparing offer…"
-                      : "Checking your location…"
-                    : "Use Deal"}
-                </Button>
+              <div className={`deal-sticky-action${user ? "" : " deal-sticky-action-guest"}`}>
+                {user ? (
+                  <Button
+                    disabled={!user.verified || busy}
+                    onClick={() => void activate()}
+                  >
+                    {busy
+                      ? deal.channel === "online"
+                        ? "Preparing offer…"
+                        : "Checking your location…"
+                      : "Use Deal"}
+                  </Button>
+                ) : (
+                  <Link
+                    className="action action-gold"
+                    to={`/sign-in?returnTo=${encodeURIComponent(`/deals/${deal.id}`)}`}
+                  >
+                    Sign In to Use Deal
+                  </Link>
+                )}
               </div>
               {deal.channel === "in_person" && (
                 <a
