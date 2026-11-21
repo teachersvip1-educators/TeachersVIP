@@ -216,6 +216,53 @@ export function createCitySearch(
   }
 }
 
+/**
+ * Looks up coordinates for a street address an administrator typed by hand.
+ * Only street-level matches are accepted: a city centroid would put the
+ * geofence in the wrong place.
+ */
+export async function geocodeStreetAddress(
+  config: Config,
+  rawAddress: string,
+  fetcher: typeof fetch = fetch,
+): Promise<CitySuggestion | null> {
+  const address = rawAddress.trim().replace(/\s+/g, " ")
+  if (!config.MAPBOX_PUBLIC_TOKEN || address.length < 5) return null
+
+  const url = new URL("https://api.mapbox.com/search/geocode/v6/forward")
+  url.searchParams.set("q", address)
+  url.searchParams.set("types", "address,secondary_address")
+  url.searchParams.set("autocomplete", "false")
+  url.searchParams.set("permanent", "true")
+  url.searchParams.set("limit", "1")
+  url.searchParams.set("language", "en")
+  url.searchParams.set("country", "us")
+  url.searchParams.set("access_token", config.MAPBOX_PUBLIC_TOKEN)
+
+  try {
+    const response = await fetcher(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) return null
+    const payload = (await response.json()) as MapboxResponse
+    const confidence = (
+      payload.features?.[0]?.properties as
+        | { match_code?: { confidence?: string } }
+        | undefined
+    )?.match_code?.confidence
+    if (confidence === "low") return null
+    const match = normalizeMapboxFeatures(payload.features, address)[0]
+    return match &&
+      Number.isFinite(match.latitude) &&
+      Number.isFinite(match.longitude)
+      ? match
+      : null
+  } catch {
+    return null
+  }
+}
+
 export async function resolveMapboxSuggestion(
   config: Config,
   rawMapboxId: string,
