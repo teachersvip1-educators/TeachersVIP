@@ -506,7 +506,8 @@ h1, h2 { font-family: Oswald, sans-serif; }
 .public-offers-heading { margin: 0; color: #f5d061; font-size: 12px; font-weight: 800; letter-spacing: 1.8px; text-transform: uppercase; }
 .public-collage { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
 .public-collage figure { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 8px; margin: 0; }
-.public-collage-count { display: flex; min-height: 24px; justify-content: flex-end; }
+.public-collage-count { position: absolute; top: 10px; right: 10px; z-index: 1; pointer-events: none; }
+.public-collage-count .rsvp-count-badge { margin-top: 0; box-shadow: 0 2px 10px #0006; }
 .public-collage-count:empty { display: none; }
 .public-collage-main { grid-column: 1 / -1; }
 .public-collage figure a { display: block; aspect-ratio: 3 / 2; overflow: hidden; border: 1px solid #ffffff20; border-radius: 16px; background: #10233e; box-shadow: 0 22px 55px #0007; }
