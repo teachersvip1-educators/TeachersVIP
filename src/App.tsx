@@ -2,6 +2,8 @@ import { AdminBusiness } from "./AdminBusiness"
 import { AdminApprovedEducators } from "./AdminEducators"
 import Catering, { AdminCatering } from "./Catering"
 import UpcomingPartners, { upcomingPartnersFor } from "./UpcomingPartners"
+import PublicOfferCard, { PublicOfferDetails } from "./PublicOffer"
+import { HOUSTON_PUBLIC_OFFERS } from "./public-offers"
 import {
   useCallback,
   useEffect,
@@ -2534,6 +2536,12 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
     return () => controller.abort()
   }, [market.id])
 
+  const search = q.toLowerCase()
+  const publicOffers = market.id === "houston" ? HOUSTON_PUBLIC_OFFERS : []
+  const shownPublicOffers = publicOffers.filter((offer) =>
+    (category === "All" || offer.category === category) &&
+    `${offer.title} ${offer.businessName} ${offer.location}`.toLowerCase().includes(search)
+  )
   const categories = [
       "All",
 
@@ -2564,7 +2572,7 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
 
       return (
         (category === "All" || mapped === category) &&
-        `${d.title} ${d.business_name}`.toLowerCase().includes(q.toLowerCase())
+        `${d.title} ${d.business_name}`.toLowerCase().includes(search)
       )
     }),
     orderedDeals = [...shown].sort((a, b) => discoverRank(a) - discoverRank(b)),
@@ -2574,6 +2582,8 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
   const loaded = !loading && !loadError
   const upcomingCount = upcomingPartnersFor(category, q).length
   const comingSoon = loaded && deals.length === 0 && market.id !== DEFAULT_DISCOVER_MARKET.id
+  const availableCount = activeDeals.length + shownPublicOffers.length
+  const hasDeals = deals.length > 0 || publicOffers.length > 0
 
   const toggle = async (deal: Deal) => {
     try {
@@ -2620,11 +2630,11 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
         <DealSkeletons />
       ) : (
         <>
-          {activeDeals.length > 0 && (
-            <section className="deal-section">
+          {availableCount > 0 && (
+            <section className="deal-section" aria-labelledby="available-deals">
               <div className="section-heading">
-                <h2>Available Deals in {market.name}</h2>
-                <span>{activeDeals.length}</span>
+                <h2 id="available-deals">Available Deals in {market.name}</h2>
+                <span>{availableCount}</span>
               </div>
               <section className="deal-grid">
                 {activeDeals.map((d) => (
@@ -2638,6 +2648,7 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
                     }
                   />
                 ))}
+                {shownPublicOffers.map((offer) => <PublicOfferCard key={offer.id} offer={offer} />)}
               </section>
             </section>
           )}
@@ -2665,10 +2676,10 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
         </>
       )}
       <UpcomingPartners category={category} search={q} />
-      {loaded && !comingSoon && !shown.length && !upcomingCount && (
+      {loaded && !comingSoon && !shown.length && !shownPublicOffers.length && !upcomingCount && (
         <Empty
-          title={deals.length ? "No matching deals" : `No deals available in ${market.name}`}
-          text={deals.length ? "Try a different search or category." : "Check back for new offers."}
+          title={hasDeals ? "No matching deals" : `No deals available in ${market.name}`}
+          text={hasDeals ? "Try a different search or category." : "Check back for new offers."}
         />
       )}
       {loaded && (comingSoon || !user.is_demo) && (
@@ -3008,6 +3019,19 @@ function BusinessReviews({
       )}
     </section>
   )
+}
+
+function DealDetail({ user }: { user: SessionUser | null }) {
+  const { id } = useParams()
+  const publicOffer = HOUSTON_PUBLIC_OFFERS.find((offer) => `public-${offer.id}` === id)
+  if (publicOffer) {
+    return (
+      <Page title={publicOffer.businessName}>
+        <PublicOfferDetails offer={publicOffer} />
+      </Page>
+    )
+  }
+  return <ActivationDealDetail user={user} />
 }
 
 function ActivationDealDetail({ user }: { user: SessionUser | null }) {
@@ -7264,7 +7288,7 @@ function AppRoutes() {
         <Route path="/catering" element={<Page title="Catering"><Catering user={user} /></Page>} />
         <Route
           path="/deals/:id"
-          element={<ActivationDealDetail user={user} />}
+          element={<DealDetail user={user} />}
         />
         <Route path="/saved" element={<Saved />} />
         <Route path="/rsvp/:id" element={<Page title="Manage your RSVP"><ManageRsvp user={user} /></Page>} />
@@ -7344,7 +7368,7 @@ function AppRoutes() {
             <div className="public-offer-header">
               <PublicHeader />
             </div>
-            <ActivationDealDetail user={null} />
+            <DealDetail user={null} />
             <SiteFooter />
           </div>
         }
