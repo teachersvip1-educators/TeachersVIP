@@ -1,5 +1,8 @@
+import type { DiscoverMarketId } from "../shared/discover-markets"
+
 export type PublicOffer = {
   id: string
+  marketIds: readonly DiscoverMarketId[]
   businessName: string
   title: string
   category: "Food & Drink" | "Shopping" | "Services" | "Sports & Events"
@@ -18,9 +21,10 @@ const TEACHER_TUESDAYS = {
 
 const TEACHER_APPRECIATION_PACKAGE = "https://mdtproject.org/businesses-that-support-teachers/"
 
-export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
+export const PUBLIC_OFFERS: readonly PublicOffer[] = [
   {
     id: "childrens-museum-houston",
+    marketIds: ["houston"],
     businessName: "Children’s Museum Houston",
     title: "$15 off any membership",
     category: "Sports & Events",
@@ -31,12 +35,14 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   {
     ...TEACHER_TUESDAYS,
     id: "dave-and-busters-houston",
+    marketIds: ["houston"],
     businessName: "Dave & Buster’s Houston",
     location: "Houston, TX",
     providerUrl: "https://www.prekindle.com/events/daveandbusters-houston",
   },
   {
     id: "half-price-books",
+    marketIds: ["houston", "dallas-fort-worth"],
     businessName: "Half Price Books",
     title: "10% off with an Educator Discount Card",
     category: "Shopping",
@@ -46,22 +52,25 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   },
   {
     id: "texas-de-brazil",
+    marketIds: ["houston", "dallas-fort-worth", "miami", "orlando", "tampa"],
     businessName: "Texas de Brazil",
     title: "10% off dine-in prices for teachers",
     category: "Food & Drink",
-    location: "Participating locations, including Houston, TX",
+    location: "Participating U.S. locations",
     details: "Show a valid teacher ID for the discount on dine-in lunch or dinner. Holiday and other restrictions apply.",
     providerUrl: "https://texasdebrazil.com/specials/heroes-discount/",
   },
   {
     ...TEACHER_TUESDAYS,
     id: "dave-and-busters-new-orleans",
+    marketIds: ["new-orleans"],
     businessName: "Dave & Buster’s New Orleans",
     location: "New Orleans, LA",
     providerUrl: "https://www.prekindle.com/events/daveandbusters-neworleans",
   },
   {
     id: "pinedas-auto-glass",
+    marketIds: ["phoenix"],
     businessName: "Pineda’s Auto Glass",
     title: "10% off",
     category: "Services",
@@ -71,6 +80,7 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   },
   {
     id: "tap-that-downtown",
+    marketIds: ["phoenix"],
     businessName: "Tap That Downtown",
     title: "15% off on-site food and beverage",
     category: "Food & Drink",
@@ -81,12 +91,14 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   {
     ...TEACHER_TUESDAYS,
     id: "dave-and-busters-phoenix",
+    marketIds: ["phoenix"],
     businessName: "Dave & Buster’s Phoenix",
     location: "Phoenix, AZ",
     providerUrl: "https://www.prekindle.com/events/daveandbusters-phoenix",
   },
   {
     id: "newfields",
+    marketIds: ["indianapolis"],
     businessName: "Newfields",
     title: "10% off memberships for teachers",
     category: "Sports & Events",
@@ -96,6 +108,7 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   },
   {
     id: "meineke-mesa",
+    marketIds: ["mesa"],
     businessName: "Meineke Mesa",
     title: "15% off services, excluding tires",
     category: "Services",
@@ -105,6 +118,7 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   },
   {
     id: "museum-of-illusions-new-orleans",
+    marketIds: ["new-orleans"],
     businessName: "Museum of Illusions New Orleans",
     title: "Teacher Appreciation Offer",
     category: "Sports & Events",
@@ -114,6 +128,7 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   },
   {
     id: "kid-museum",
+    marketIds: ["bethesda", "maryland"],
     businessName: "KID Museum",
     title: "Educator discount on family programming",
     category: "Sports & Events",
@@ -124,6 +139,7 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   },
   {
     id: "national-wwii-museum",
+    marketIds: ["new-orleans"],
     businessName: "The National WWII Museum",
     title: "Educator Appreciation Event",
     category: "Sports & Events",
@@ -135,12 +151,14 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   {
     ...TEACHER_TUESDAYS,
     id: "dave-and-busters-indianapolis",
+    marketIds: ["indianapolis"],
     businessName: "Dave & Buster’s Indianapolis",
     location: "Indianapolis, IN",
     providerUrl: "https://www.prekindle.com/events/daveandbusters-indianapolis",
   },
   {
     id: "arizona-grand-resort",
+    marketIds: ["phoenix"],
     businessName: "Arizona Grand Resort",
     title: "Educator rate",
     category: "Services",
@@ -151,6 +169,7 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
   },
   {
     id: "national-museum-of-women-in-the-arts",
+    marketIds: ["washington-dc"],
     businessName: "National Museum of Women in the Arts",
     title: "Discounted educator admission",
     category: "Sports & Events",
@@ -159,3 +178,7 @@ export const HOUSTON_PUBLIC_OFFERS: readonly PublicOffer[] = [
     providerUrl: "https://nmwa.org/visit/visitor-faqs/",
   },
 ]
+
+export function publicOffersForMarket(marketId: DiscoverMarketId): PublicOffer[] {
+  return PUBLIC_OFFERS.filter((offer) => offer.marketIds.includes(marketId))
+}

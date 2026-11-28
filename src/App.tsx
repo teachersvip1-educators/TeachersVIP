@@ -3,7 +3,7 @@ import { AdminApprovedEducators } from "./AdminEducators"
 import Catering, { AdminCatering } from "./Catering"
 import UpcomingPartners, { upcomingPartnersFor } from "./UpcomingPartners"
 import PublicOfferCard, { PublicOfferDetails } from "./PublicOffer"
-import { HOUSTON_PUBLIC_OFFERS } from "./public-offers"
+import { PUBLIC_OFFERS, publicOffersForMarket } from "./public-offers"
 import {
   useCallback,
   useEffect,
@@ -2537,7 +2537,7 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
   }, [market.id])
 
   const search = q.toLowerCase()
-  const publicOffers = market.id === "houston" ? HOUSTON_PUBLIC_OFFERS : []
+  const publicOffers = publicOffersForMarket(market.id)
   const shownPublicOffers = publicOffers.filter((offer) =>
     (category === "All" || offer.category === category) &&
     `${offer.title} ${offer.businessName} ${offer.location}`.toLowerCase().includes(search)
@@ -2581,7 +2581,7 @@ function MarketDeals({ market, user }: { market: DiscoverMarket; user: SessionUs
 
   const loaded = !loading && !loadError
   const upcomingCount = upcomingPartnersFor(category, q).length
-  const comingSoon = loaded && deals.length === 0 && market.id !== DEFAULT_DISCOVER_MARKET.id
+  const comingSoon = loaded && !deals.length && !publicOffers.length && market.id !== DEFAULT_DISCOVER_MARKET.id
   const availableCount = activeDeals.length + shownPublicOffers.length
   const hasDeals = deals.length > 0 || publicOffers.length > 0
 
@@ -3023,7 +3023,7 @@ function BusinessReviews({
 
 function DealDetail({ user }: { user: SessionUser | null }) {
   const { id } = useParams()
-  const publicOffer = HOUSTON_PUBLIC_OFFERS.find((offer) => `public-${offer.id}` === id)
+  const publicOffer = PUBLIC_OFFERS.find((offer) => `public-${offer.id}` === id)
   if (publicOffer) {
     return (
       <Page title={publicOffer.businessName}>

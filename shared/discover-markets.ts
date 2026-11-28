@@ -8,9 +8,11 @@ export const DISCOVER_MARKETS = [
   { id: "tampa", label: "Tampa, FL", name: "Tampa" },
   { id: "washington-dc", label: "Washington, DC", name: "Washington, DC" },
   { id: "maryland", label: "Maryland", name: "Maryland" },
+  { id: "bethesda", label: "Bethesda, MD", name: "Bethesda" },
   { id: "new-orleans", label: "New Orleans, LA", name: "New Orleans" },
   { id: "nashville", label: "Nashville, TN", name: "Nashville" },
   { id: "phoenix", label: "Phoenix, AZ", name: "Phoenix" },
+  { id: "mesa", label: "Mesa, AZ", name: "Mesa" },
   { id: "chicago", label: "Chicago, IL", name: "Chicago" },
 ] as const
 
